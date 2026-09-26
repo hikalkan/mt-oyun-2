@@ -69,7 +69,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * 0.003
-		pitch += event.relative.y * 0.0026
+		pitch -= event.relative.y * 0.0026
 		pitch = clampf(pitch, -1.05, 1.05)
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key := event as InputEventKey
