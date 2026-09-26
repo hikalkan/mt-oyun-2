@@ -4,6 +4,7 @@ const Bounds := preload("res://scripts/sea_bounds.gd")
 
 var _kelps: Array[Node3D] = []
 var _schools: Array = []
+var _boats: Array = []
 
 
 func _ready() -> void:
@@ -14,6 +15,7 @@ func _ready() -> void:
 	_rocks(rng)
 	_schools_build(rng)
 	_bubbles()
+	_boats_build(rng)
 
 
 func _process(delta: float) -> void:
@@ -38,6 +40,20 @@ func _process(delta: float) -> void:
 		school.pos = pos
 		school.vel = vel
 		school.node.position = pos
+	var edge := Bounds.HALF * 0.72
+	for boat in _boats:
+		var heading: float = boat.heading
+		var pos: Vector3 = boat.pos + Vector3(sin(heading), 0.0, -cos(heading)) * boat.speed * delta
+		if absf(pos.x) > edge or absf(pos.z) > edge:
+			heading = atan2(-pos.x, pos.z)
+			pos.x = clampf(pos.x, -edge, edge)
+			pos.z = clampf(pos.z, -edge, edge)
+		var bob: float = boat.bob + delta
+		boat.heading = heading
+		boat.pos = pos
+		boat.bob = bob
+		boat.node.position = Vector3(pos.x, 0.25 + sin(bob * 1.25) * 0.16, pos.z)
+		boat.node.rotation = Vector3(cos(bob * 1.05) * 0.03, heading, sin(bob * 0.85) * 0.045)
 
 
 func _forest(rng: RandomNumberGenerator) -> void:
@@ -179,6 +195,132 @@ func _bubbles() -> void:
 		add_child(p)
 
 
+func _boats_build(rng: RandomNumberGenerator) -> void:
+	var paints: Array[Color] = [
+		Color(0.78, 0.16, 0.14),
+		Color(0.14, 0.34, 0.7),
+		Color(0.86, 0.7, 0.16),
+		Color(0.18, 0.52, 0.32),
+		Color(0.9, 0.9, 0.92),
+	]
+	for i in paints.size():
+		_launch(_small_boat(paints[i]), rng, rng.randf_range(4.0, 6.0), rng.randf_range(0.85, 1.15))
+	for i in 3:
+		_launch(_ship(i == 0), rng, rng.randf_range(2.1, 3.1), rng.randf_range(0.9, 1.12))
+	for i in 2:
+		_launch(_sailboat(), rng, rng.randf_range(3.3, 4.6), rng.randf_range(0.9, 1.1))
+
+
+func _launch(node: Node3D, rng: RandomNumberGenerator, speed: float, scl: float) -> void:
+	var boat := Boat.new()
+	boat.node = node
+	boat.pos = Vector3(rng.randf_range(-150.0, 150.0), 0.0, rng.randf_range(-150.0, 150.0))
+	boat.heading = rng.randf_range(-PI, PI)
+	boat.speed = speed
+	boat.bob = rng.randf() * TAU
+	node.scale = Vector3.ONE * scl
+	node.position = boat.pos
+	add_child(node)
+	_boats.append(boat)
+
+
+func _small_boat(color: Color) -> Node3D:
+	var root := Node3D.new()
+	var hull := _mat(color, 0.42)
+	var belly := _mat(color.darkened(0.38), 0.58)
+	var white := _mat(Color(0.93, 0.94, 0.92), 0.38)
+	var wood := _mat(Color(0.42, 0.28, 0.14), 0.65)
+	_part(root, _sphere(1.15), Vector3(0, 0.05, 0), Vector3(1.2, 0.4, 3.3), belly)
+	_part(root, _sphere(1.05), Vector3(0, 0.38, 0), Vector3(1.08, 0.28, 3.0), hull)
+	var cabin := BoxMesh.new()
+	cabin.size = Vector3(1.15, 0.75, 1.25)
+	_part(root, cabin, Vector3(0, 0.9, 0.85), Vector3.ONE, white)
+	var mast := CylinderMesh.new()
+	mast.top_radius = 0.05
+	mast.bottom_radius = 0.08
+	mast.height = 2.2
+	_part(root, mast, Vector3(0, 1.7, -0.35), Vector3.ONE, wood)
+	_foam(root, 3.3)
+	return root
+
+
+func _ship(red_hull: bool) -> Node3D:
+	var root := Node3D.new()
+	var hull_col := Color(0.62, 0.14, 0.13) if red_hull else Color(0.1, 0.14, 0.2)
+	var hull := _mat(hull_col, 0.38)
+	var belly := _mat(hull_col.darkened(0.28), 0.55)
+	var white := _mat(Color(0.9, 0.91, 0.88), 0.34)
+	var stripe := _mat(Color(0.9, 0.72, 0.18), 0.4)
+	var metal := _mat(Color(0.28, 0.3, 0.33), 0.45)
+	_part(root, _sphere(2.3), Vector3(0, -0.2, 0), Vector3(1.7, 0.42, 7.4), belly)
+	_part(root, _sphere(2.15), Vector3(0, 0.4, 0), Vector3(1.55, 0.34, 6.9), hull)
+	_part(root, _sphere(2.05), Vector3(0, 0.72, 0), Vector3(1.58, 0.07, 6.6), stripe)
+	var cabin := BoxMesh.new()
+	cabin.size = Vector3(2.6, 1.7, 3.4)
+	_part(root, cabin, Vector3(0, 1.7, 5.2), Vector3.ONE, white)
+	var bridge := BoxMesh.new()
+	bridge.size = Vector3(2.0, 1.05, 1.7)
+	_part(root, bridge, Vector3(0, 2.9, 5.6), Vector3.ONE, white)
+	var stack := CylinderMesh.new()
+	stack.top_radius = 0.28
+	stack.bottom_radius = 0.38
+	stack.height = 1.8
+	_part(root, stack, Vector3(0.85, 2.5, 2.6), Vector3.ONE, metal)
+	_part(root, stack, Vector3(-0.85, 2.3, 2.4), Vector3(0.85, 0.85, 0.85), metal)
+	_foam(root, 15.5)
+	return root
+
+
+func _sailboat() -> Node3D:
+	var root := Node3D.new()
+	var hull := _mat(Color(0.94, 0.95, 0.96), 0.28)
+	var belly := _mat(Color(0.12, 0.26, 0.48), 0.45)
+	var sail := _mat(Color(0.97, 0.97, 0.94), 0.55)
+	var wood := _mat(Color(0.4, 0.26, 0.14), 0.6)
+	_part(root, _sphere(1.05), Vector3(0, 0.0, 0), Vector3(1.05, 0.38, 3.8), belly)
+	_part(root, _sphere(1.0), Vector3(0, 0.32, 0), Vector3(0.98, 0.24, 3.5), hull)
+	var mast := CylinderMesh.new()
+	mast.top_radius = 0.05
+	mast.bottom_radius = 0.09
+	mast.height = 6.0
+	_part(root, mast, Vector3(0, 3.2, -0.4), Vector3.ONE, wood)
+	var main_sail := BoxMesh.new()
+	main_sail.size = Vector3(0.06, 3.6, 2.0)
+	_part(root, main_sail, Vector3(0.55, 3.6, -0.35), Vector3.ONE, sail)
+	var front_sail := BoxMesh.new()
+	front_sail.size = Vector3(0.06, 2.4, 1.4)
+	_part(root, front_sail, Vector3(-0.4, 2.4, -1.5), Vector3.ONE, sail)
+	_foam(root, 3.6)
+	return root
+
+
+func _foam(parent: Node3D, z: float) -> void:
+	var mat := _mat(Color(0.92, 0.96, 1.0, 0.6), 0.15, true)
+	for i in 3:
+		var drop := SphereMesh.new()
+		drop.radius = 0.28
+		drop.height = 0.56
+		_part(parent, drop, Vector3((float(i) - 1.0) * 0.4, -0.05, z), Vector3(1.3, 0.32, 0.7), mat)
+
+
+func _sphere(radius: float) -> SphereMesh:
+	var mesh := SphereMesh.new()
+	mesh.radius = radius
+	mesh.height = radius * 2.0
+	mesh.radial_segments = 16
+	mesh.rings = 8
+	return mesh
+
+
+func _part(parent: Node3D, mesh: Mesh, pos: Vector3, scl: Vector3, mat: Material) -> void:
+	var n := MeshInstance3D.new()
+	n.mesh = mesh
+	n.position = pos
+	n.scale = scl
+	n.material_override = mat
+	parent.add_child(n)
+
+
 func _mat(color: Color, rough: float, transparent: bool = false) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
@@ -193,3 +335,11 @@ class School extends RefCounted:
 	var node: Node3D
 	var pos: Vector3
 	var vel: Vector3
+
+
+class Boat extends RefCounted:
+	var node: Node3D
+	var pos: Vector3
+	var heading: float
+	var speed: float
+	var bob: float
