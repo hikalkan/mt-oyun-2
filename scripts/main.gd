@@ -8,9 +8,17 @@ const Bounds := preload("res://scripts/sea_bounds.gd")
 @onready var form_label: Label = $HUD/Root/Form
 @onready var camera_label: Label = $HUD/Root/CameraMode
 
+const HUNGER_FULL := 30.0
+const BITE_FILL := 12.0
+
 var score := 0
+var hunger := HUNGER_FULL
+var dead := false
 var _env: Environment
 var _score_tween: Tween
+var _hunger_label: Label
+var _hunger_fill: ColorRect
+var _death_layer: Control
 
 
 func _ready() -> void:
@@ -23,6 +31,8 @@ func _ready() -> void:
 	player.camera_changed.connect(_on_camera)
 	_style_form()
 	camera_label.text = player.camera_name()
+	_build_hunger_ui()
+	_build_death_ui()
 	for i in 44:
 		var fish = FishScript.new()
 		var pos: Vector3
@@ -36,7 +46,22 @@ func _ready() -> void:
 		add_child(fish)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_update_fog()
+	if dead:
+		return
+	hunger = maxf(hunger - delta, 0.0)
+	_paint_hunger()
+	if hunger <= 0.0:
+		_die()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if dead and event.is_action_pressed("ui_accept"):
+		get_tree().reload_current_scene()
+
+
+func _update_fog() -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null or _env == null:
 		return
@@ -54,6 +79,10 @@ func _process(_delta: float) -> void:
 
 
 func _on_ate(at: Vector3) -> void:
+	if dead:
+		return
+	hunger = minf(HUNGER_FULL, hunger + BITE_FILL)
+	_paint_hunger()
 	score += 1
 	score_label.text = "Yediğin balık: %d" % score
 	var pop := PlusOne.new()
@@ -72,6 +101,83 @@ func _on_form(_form_label: String) -> void:
 
 func _on_camera(mode_label: String) -> void:
 	camera_label.text = mode_label
+
+
+func _die() -> void:
+	dead = true
+	player.die()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_death_layer.visible = true
+
+
+func _build_hunger_ui() -> void:
+	var box := Control.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	box.offset_left = -330.0
+	box.offset_top = 16.0
+	box.offset_right = -24.0
+	box.offset_bottom = 78.0
+	$HUD/Root.add_child(box)
+	_hunger_label = Label.new()
+	_hunger_label.text = "Tokluk"
+	_hunger_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hunger_label.add_theme_font_size_override("font_size", 24)
+	_hunger_label.add_theme_color_override("font_color", Color(1, 1, 1))
+	_hunger_label.add_theme_color_override("font_outline_color", Color(0.02, 0.1, 0.22, 0.9))
+	_hunger_label.add_theme_constant_override("outline_size", 8)
+	box.add_child(_hunger_label)
+	var back := ColorRect.new()
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	back.color = Color(0.04, 0.08, 0.12, 0.8)
+	back.position = Vector2(0, 34)
+	back.size = Vector2(306, 24)
+	box.add_child(back)
+	_hunger_fill = ColorRect.new()
+	_hunger_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hunger_fill.position = Vector2(4, 38)
+	_hunger_fill.size = Vector2(298, 16)
+	box.add_child(_hunger_fill)
+	_paint_hunger()
+
+
+func _paint_hunger() -> void:
+	var t := clampf(hunger / HUNGER_FULL, 0.0, 1.0)
+	_hunger_fill.size.x = 298.0 * t
+	if t > 0.5:
+		_hunger_fill.color = Color(0.95, 0.78, 0.22).lerp(Color(0.3, 0.86, 0.4), (t - 0.5) * 2.0)
+	else:
+		_hunger_fill.color = Color(0.9, 0.22, 0.18).lerp(Color(0.95, 0.78, 0.22), t * 2.0)
+	if t < 0.28:
+		_hunger_label.text = "Acıktın!"
+		_hunger_label.add_theme_color_override("font_color", Color(1, 0.45, 0.32))
+	else:
+		_hunger_label.text = "Tokluk"
+		_hunger_label.add_theme_color_override("font_color", Color(1, 1, 1))
+
+
+func _build_death_ui() -> void:
+	_death_layer = Control.new()
+	_death_layer.visible = false
+	_death_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_death_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	$HUD/Root.add_child(_death_layer)
+	var dim := ColorRect.new()
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dim.color = Color(0.02, 0.04, 0.08, 0.72)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_death_layer.add_child(dim)
+	var msg := Label.new()
+	msg.text = "Açlıktan öldün\n\nSpace: yeniden başla"
+	msg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	msg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	msg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	msg.add_theme_font_size_override("font_size", 48)
+	msg.add_theme_color_override("font_color", Color(1, 0.95, 0.9))
+	msg.add_theme_color_override("font_outline_color", Color(0.05, 0.08, 0.14))
+	msg.add_theme_constant_override("outline_size", 12)
+	_death_layer.add_child(msg)
 
 
 func _style_form() -> void:

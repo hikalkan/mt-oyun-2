@@ -72,11 +72,12 @@ layout_mode = 0
 offset_left = 24.0
 offset_top = 132.0
 offset_right = 1200.0
-offset_bottom = 188.0
+offset_bottom = 214.0
 mouse_filter = 2
 theme_override_colors/font_color = Color(1, 1, 1, 0.94)
 theme_override_colors/font_outline_color = Color(0.02, 0.1, 0.22, 0.9)
 theme_override_constants/outline_size = 6
 theme_override_font_sizes/font_size = 18
 text = "W A S D veya oklar: yüz    Fare: bak    Boşluk: yukarı    Ctrl: aşağı
-M: değiş    P: kamera    Q: su fışkırt    K: ses    Esc: fareyi bırak"
+M: değiş    P: kamera    Q: su fışkırt    K: ses    Esc: fareyi bırak
+Balık yemezsen tokluk biter ve ölürsün"

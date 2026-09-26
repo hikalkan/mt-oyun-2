@@ -11,6 +11,7 @@ const BODY_LAYER := 2
 const HOOD_LAYER := 4
 
 var form := Form.WHALE
+var alive := true
 var fps_mode := false
 var swim_speed := 11.0
 var accel := 7.0
@@ -62,6 +63,8 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not alive:
+		return
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -85,7 +88,18 @@ func _notification(what: int) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
+func die() -> void:
+	alive = false
+	velocity = Vector3.ZERO
+	if _spout:
+		_spout.emitting = false
+	for jet in _jets:
+		jet.visible = false
+
+
 func _physics_process(delta: float) -> void:
+	if not alive:
+		return
 	_time += delta
 	if _switch_lock > 0.0:
 		_switch_lock -= delta
@@ -253,6 +267,8 @@ func _animate() -> void:
 
 
 func _on_mouth_area(area: Area3D) -> void:
+	if not alive:
+		return
 	if not area.is_in_group("fish"):
 		return
 	var rel := _pitch.to_local(area.global_position)
