@@ -3,6 +3,8 @@ extends CharacterBody3D
 signal form_changed(form_label: String)
 signal ate_fish(at: Vector3)
 signal camera_changed(mode_label: String)
+signal got_hurt(left: float)
+signal got_downed
 
 enum Form { WHALE, SHARK }
 
@@ -14,6 +16,9 @@ var owns_screen := true
 
 var form := Form.WHALE
 var alive := true
+var health := 100.0
+var _hurt_lock := 0.0
+const HEALTH_MAX := 100.0
 var fps_mode := false
 var swim_speed := 11.0
 var accel := 7.0
@@ -99,6 +104,32 @@ func _notification(what: int) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
+func heal(amount: float) -> void:
+	if not alive:
+		return
+	health = minf(HEALTH_MAX, health + amount)
+	got_hurt.emit(health)
+
+
+func hurt(amount: float, from_pos: Vector3) -> bool:
+	if not alive or _hurt_lock > 0.0:
+		return false
+	if form == Form.WHALE:
+		amount *= 0.65
+	health = maxf(health - amount, 0.0)
+	_hurt_lock = 0.8
+	var away := global_position - from_pos
+	away.y *= 0.35
+	if away.length_squared() < 0.01:
+		away = Vector3(0, 0, 1)
+	velocity += away.normalized() * 7.0
+	got_hurt.emit(health)
+	if health <= 0.0:
+		die()
+		got_downed.emit()
+	return true
+
+
 func die() -> void:
 	alive = false
 	velocity = Vector3.ZERO
@@ -139,6 +170,8 @@ func _physics_process(delta: float) -> void:
 		pitch -= look_y * 2.0 * delta
 		pitch = clampf(pitch, -1.05, 1.05)
 	_time += delta
+	if _hurt_lock > 0.0:
+		_hurt_lock -= delta
 	if _switch_lock > 0.0:
 		_switch_lock -= delta
 	rotation.y = yaw
@@ -341,10 +374,14 @@ func _animate() -> void:
 func _on_mouth_area(area: Area3D) -> void:
 	if not alive:
 		return
-	if not area.is_in_group("fish"):
-		return
 	var rel := _pitch.to_local(area.global_position)
-	if rel.z > 0.3:
+	if rel.z > 0.35:
+		return
+	if area.is_in_group("enemy"):
+		if area.call("bonk", global_position) == true:
+			heal(10.0)
+		return
+	if not area.is_in_group("fish"):
 		return
 	if area.call("got_eaten") == true:
 		ate_fish.emit(area.global_position)

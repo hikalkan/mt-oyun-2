@@ -1,11 +1,13 @@
 extends Node3D
 
 const FishScript := preload("res://scripts/fish.gd")
+const EnemyScript := preload("res://scripts/enemy.gd")
+const FisherScript := preload("res://scripts/fisher.gd")
 const Bounds := preload("res://scripts/sea_bounds.gd")
 const LEVELS := {
-	"kolay": {"goal": 8, "hunger": 48.0, "bite": 18.0, "fish": 150, "title": "Kolay"},
-	"orta": {"goal": 15, "hunger": 30.0, "bite": 12.0, "fish": 110, "title": "Orta"},
-	"zor": {"goal": 25, "hunger": 16.0, "bite": 7.0, "fish": 72, "title": "Zor"},
+	"kolay": {"goal": 8, "hunger": 48.0, "bite": 18.0, "fish": 150, "sharks": 2, "dogs": 2, "mean": 3, "fishers": 2, "hook": -16.0, "reach": 12.0, "title": "Kolay"},
+	"orta": {"goal": 15, "hunger": 30.0, "bite": 12.0, "fish": 110, "sharks": 3, "dogs": 3, "mean": 4, "fishers": 3, "hook": -22.0, "reach": 16.0, "title": "Orta"},
+	"zor": {"goal": 25, "hunger": 16.0, "bite": 7.0, "fish": 72, "sharks": 4, "dogs": 4, "mean": 6, "fishers": 5, "hook": -32.0, "reach": 18.0, "title": "Zor"},
 }
 
 @onready var player = $Player
@@ -14,6 +16,8 @@ var _player_count := 1
 var _diff_key := "orta"
 var _playing := false
 var _finished := false
+var _ended_by_bite := false
+var _ended_by_hook := false
 var _goal := 15
 var _hunger_full := 30.0
 var _bite_fill := 12.0
@@ -100,8 +104,10 @@ func _on_ate(at: Vector3, seat: Seat) -> void:
 	if _finished or seat.dead:
 		return
 	seat.hunger = minf(_hunger_full, seat.hunger + _bite_fill)
+	seat.who.heal(8.0)
 	seat.score += 1
 	_paint_hunger(seat)
+	_paint_health(seat)
 	_refresh_score(seat)
 	var pop := PlusOne.new()
 	pop.position = at + Vector3(0, 0.6, 0)
@@ -135,11 +141,14 @@ func _add_seat(who, score_label: Label, form_label: Label, camera_label: Label, 
 	who.ate_fish.connect(_on_ate.bind(seat))
 	who.form_changed.connect(_on_form.bind(seat))
 	who.camera_changed.connect(_on_camera.bind(seat))
+	who.got_hurt.connect(_on_hurt.bind(seat))
+	who.got_downed.connect(_on_downed.bind(seat))
 	_style_form(seat)
 	seat.camera_label.text = who.camera_name()
 	if hint_label:
 		hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_build_hunger_bar(seat)
+	_build_health_bar(seat)
 	_refresh_score(seat)
 
 
@@ -162,8 +171,12 @@ func _start_game() -> void:
 		_setup_split()
 	for seat in _seats:
 		seat.hunger = _hunger_full
+		seat.who.health = 100.0
 		_paint_hunger(seat)
+		_paint_health(seat)
 	_spawn_fish()
+	_spawn_enemies()
+	_spawn_fishers()
 	_layout_hud()
 	_refresh_goal()
 	_menu.hide()
@@ -187,7 +200,7 @@ func _spawn_second() -> void:
 	var score_label := _hud_label("Yediğin balık: 0", 28)
 	var form_label := _hud_label("Köpekbalığı", 24)
 	var camera_label := _hud_label("Arkadan", 22)
-	var hint := _hud_label("Kumanda    Sol çubuk: yüz    Sağ çubuk: bak\nA: yukarı    B: aşağı    X: değiş    Y: kamera\nRB: su fışkırt    LB: ses", 18)
+	var hint := _hud_label("Kumanda    Sol çubuk: yüz    Sağ çubuk: bak\nA: yukarı    B: aşağı    X: değiş    Y: kamera\nRB: su fışkırt    LB: ses    Olta tutarsa ölürsün, derine dal", 18)
 	$HUD/Root.add_child(score_label)
 	$HUD/Root.add_child(form_label)
 	$HUD/Root.add_child(camera_label)
@@ -258,12 +271,81 @@ func _spawn_fish() -> void:
 		add_child(fish)
 
 
-func _kill_seat(seat: Seat) -> void:
+func _spawn_enemies() -> void:
+	var level: Dictionary = LEVELS[_diff_key]
+	_spawn_enemy_kind(int(level.sharks), EnemyScript.Kind.SHARK)
+	_spawn_enemy_kind(int(level.dogs), EnemyScript.Kind.DOG)
+	_spawn_enemy_kind(int(level.mean), EnemyScript.Kind.FISH)
+
+
+func _spawn_enemy_kind(count: int, kind: EnemyScript.Kind) -> void:
+	for i in count:
+		var enemy = EnemyScript.new()
+		var around = _seats[i % _seats.size()].who.global_position
+		enemy.setup(kind)
+		enemy.position = Bounds.nearby_water(around, 36.0, 95.0)
+		add_child(enemy)
+
+
+func _on_hurt(_left: float, seat: Seat) -> void:
+	_paint_health(seat)
+
+
+func _spawn_fishers() -> void:
+	var level: Dictionary = LEVELS[_diff_key]
+	var count := int(level.fishers)
+	for i in count:
+		var fisher = FisherScript.new()
+		fisher.reach = float(level.reach)
+		fisher.deep = float(level.hook)
+		var around = _seats[i % _seats.size()].who.global_position
+		var ang := TAU * float(i) / float(count) + randf_range(-0.3, 0.3)
+		var dist := randf_range(48.0, 120.0)
+		fisher.position = Vector3(around.x + cos(ang) * dist, 0.28, around.z + sin(ang) * dist)
+		fisher.heading = randf() * TAU
+		fisher.caught.connect(_on_hooked)
+		add_child(fisher)
+
+
+func _on_hooked(who) -> void:
+	if _finished:
+		return
+	for seat in _seats:
+		if seat.who != who or seat.dead:
+			continue
+		_kill_seat(seat, false, true)
+		if _living_count() == 0:
+			_ended_by_hook = true
+			_game_over()
+		return
+
+
+func _on_downed(seat: Seat) -> void:
+	if _finished or seat.dead:
+		return
+	_kill_seat(seat, true)
+	if _living_count() == 0:
+		_ended_by_bite = true
+		_game_over()
+
+
+func _kill_seat(seat: Seat, bitten: bool = false, hooked: bool = false) -> void:
 	seat.dead = true
+	seat.bitten = bitten
+	seat.hooked = hooked
 	seat.who.die()
-	seat.hunger_label.text = "Açlıktan öldün"
-	seat.hunger_label.add_theme_color_override("font_color", Color(1, 0.45, 0.32))
-	_paint_hunger(seat)
+	if hooked:
+		seat.health_label.text = "Yakalandın"
+		seat.health_label.add_theme_color_override("font_color", Color(1, 0.45, 0.32))
+		_paint_health(seat)
+	elif bitten:
+		seat.health_label.text = "Isırıldın"
+		seat.health_label.add_theme_color_override("font_color", Color(1, 0.45, 0.32))
+		_paint_health(seat)
+	else:
+		seat.hunger_label.text = "Açlıktan öldün"
+		seat.hunger_label.add_theme_color_override("font_color", Color(1, 0.45, 0.32))
+		_paint_hunger(seat)
 
 
 func _win() -> void:
@@ -284,7 +366,12 @@ func _end(lost: bool) -> void:
 			seat.dead = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if lost:
-		_end_label.text = "Açlıktan öldün\n\nSpace: yeniden başla" if _seats.size() == 1 else "Açlıktan öldünüz\n\nSpace: yeniden başla"
+		if _ended_by_hook:
+			_end_label.text = "Tekne tuttu\n\nSpace: yeniden başla" if _seats.size() == 1 else "Tekne tuttu\n\nSpace: yeniden başla"
+		elif _ended_by_bite:
+			_end_label.text = "Isırıldın\n\nSpace: yeniden başla" if _seats.size() == 1 else "Isırıldınız\n\nSpace: yeniden başla"
+		else:
+			_end_label.text = "Açlıktan öldün\n\nSpace: yeniden başla" if _seats.size() == 1 else "Açlıktan öldünüz\n\nSpace: yeniden başla"
 		_end_label.add_theme_color_override("font_color", Color(1, 0.9, 0.86))
 	else:
 		_end_label.text = "Kazandınız!\n\nSpace: yeniden başla"
@@ -342,7 +429,7 @@ func _layout_hud() -> void:
 		_place_label(seat.form_label, left + 20.0, 50.0, left + span * 0.58, 84.0)
 		_place_label(seat.camera_label, left + 20.0, 84.0, left + span * 0.58, 116.0)
 		if seat.hint_label:
-			_place_label(seat.hint_label, left + 20.0, 116.0, left + span - 16.0, 214.0)
+			_place_label(seat.hint_label, left + 20.0, 158.0, left + span - 16.0, 292.0)
 		var bar_w := 220.0 if count > 1 else 300.0
 		seat.bar_width = bar_w - 14.0
 		seat.hunger_box.offset_left = left + span - bar_w - 16.0
@@ -351,6 +438,13 @@ func _layout_hud() -> void:
 		seat.hunger_box.offset_bottom = 78.0
 		seat.hunger_back.size = Vector2(bar_w, 22.0)
 		_paint_hunger(seat)
+		if seat.health_box:
+			seat.health_box.offset_left = left + span - bar_w - 16.0
+			seat.health_box.offset_top = 82.0
+			seat.health_box.offset_right = left + span - 16.0
+			seat.health_box.offset_bottom = 146.0
+			seat.health_back.size = Vector2(bar_w, 22.0)
+			_paint_health(seat)
 		if seat.view != null:
 			var wanted := Vector2i(maxi(int(span), 2), maxi(int(sz.y), 2))
 			if seat.view.size != wanted:
@@ -421,6 +515,46 @@ func _paint_hunger(seat: Seat) -> void:
 	else:
 		seat.hunger_label.text = "Tokluk"
 		seat.hunger_label.add_theme_color_override("font_color", Color(1, 1, 1))
+
+
+func _build_health_bar(seat: Seat) -> void:
+	var box := Control.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$HUD/Root.add_child(box)
+	seat.health_box = box
+	seat.health_label = _hud_label("Can", 22)
+	box.add_child(seat.health_label)
+	var back := ColorRect.new()
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	back.color = Color(0.04, 0.08, 0.12, 0.8)
+	back.position = Vector2(0, 32)
+	back.size = Vector2(300, 22)
+	box.add_child(back)
+	seat.health_back = back
+	var fill := ColorRect.new()
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fill.color = Color(0.92, 0.24, 0.22)
+	fill.position = Vector2(3, 35)
+	fill.size = Vector2(286, 16)
+	box.add_child(fill)
+	seat.health_fill = fill
+	_paint_health(seat)
+
+
+func _paint_health(seat: Seat) -> void:
+	if seat.health_fill == null or seat.who == null:
+		return
+	var t := clampf(seat.who.health / 100.0, 0.0, 1.0)
+	seat.health_fill.size.x = seat.bar_width * t
+	seat.health_fill.color = Color(0.85, 0.16, 0.14).lerp(Color(0.95, 0.38, 0.32), t)
+	if seat.dead:
+		return
+	if t < 0.28:
+		seat.health_label.text = "Canın az!"
+		seat.health_label.add_theme_color_override("font_color", Color(1, 0.45, 0.32))
+	else:
+		seat.health_label.text = "Can"
+		seat.health_label.add_theme_color_override("font_color", Color(1, 1, 1))
 
 
 func _build_death_ui() -> void:
@@ -555,7 +689,7 @@ func _refresh_menu() -> void:
 	var info := _menu.find_child("Info", true, false) as Label
 	if info:
 		var level: Dictionary = LEVELS[_diff_key]
-		info.text = "%d balık ye. Tokluk %d saniye sürer." % [int(level.goal), int(level.hunger)]
+		info.text = "%d balık ye. Tokluk %d saniye sürer.\nKöpekbalığı, köpek ve kötü balık saldırır. Olta tutarsa ölürsün." % [int(level.goal), int(level.hunger)]
 
 
 func _style_choice(button: Button, on: bool) -> void:
@@ -705,6 +839,8 @@ class Seat extends RefCounted:
 	var who
 	var hunger := 30.0
 	var dead := false
+	var bitten := false
+	var hooked := false
 	var score := 0
 	var bar_width := 286.0
 	var score_label: Label
@@ -715,6 +851,10 @@ class Seat extends RefCounted:
 	var hunger_fill: ColorRect
 	var hunger_box: Control
 	var hunger_back: ColorRect
+	var health_label: Label
+	var health_fill: ColorRect
+	var health_box: Control
+	var health_back: ColorRect
 	var view: SubViewport
 	var view_cam: Camera3D
 	var panel: SubViewportContainer
