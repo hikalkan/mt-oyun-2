@@ -367,11 +367,11 @@ func is_shark() -> bool:
 
 
 func scare_radius() -> float:
-	return 14.0 if is_shark() else 7.5
+	return 6.0 if is_shark() else 4.2
 
 
 func scare_power() -> float:
-	return 13.0 if is_shark() else 5.5
+	return 2.4 if is_shark() else 1.2
 
 
 func _build_mouth() -> void:

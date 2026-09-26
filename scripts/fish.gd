@@ -48,6 +48,7 @@ func _physics_process(delta: float) -> void:
 		wander = _new_wander()
 		_wander_wait = randf_range(1.4, 3.2)
 	var desired := wander * cruise_speed
+	var accel := 5.0
 	var hunter = _nearest_player()
 	if hunter != null:
 		var offset: Vector3 = global_position - hunter.global_position
@@ -55,8 +56,9 @@ func _physics_process(delta: float) -> void:
 		var radius: float = hunter.scare_radius()
 		if dist < radius and dist > 0.2:
 			var urgency := 1.0 - dist / radius
-			desired = offset.normalized() * (cruise_speed + hunter.scare_power() * urgency)
-	velocity = velocity.move_toward(desired, 8.0 * delta)
+			desired = offset.normalized() * (cruise_speed * 0.85 + hunter.scare_power() * urgency)
+			accel = 2.2
+	velocity = velocity.move_toward(desired, accel * delta)
 	global_position += velocity * delta
 	global_position = Bounds.clamp_pos(global_position, 2.8)
 	_face()
