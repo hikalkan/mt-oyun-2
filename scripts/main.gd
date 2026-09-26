@@ -3,9 +3,9 @@ extends Node3D
 const FishScript := preload("res://scripts/fish.gd")
 const Bounds := preload("res://scripts/sea_bounds.gd")
 const LEVELS := {
-	"kolay": {"goal": 8, "hunger": 48.0, "bite": 18.0, "fish": 58, "title": "Kolay"},
-	"orta": {"goal": 15, "hunger": 30.0, "bite": 12.0, "fish": 44, "title": "Orta"},
-	"zor": {"goal": 25, "hunger": 16.0, "bite": 7.0, "fish": 26, "title": "Zor"},
+	"kolay": {"goal": 8, "hunger": 48.0, "bite": 18.0, "fish": 150, "title": "Kolay"},
+	"orta": {"goal": 15, "hunger": 30.0, "bite": 12.0, "fish": 110, "title": "Orta"},
+	"zor": {"goal": 25, "hunger": 16.0, "bite": 7.0, "fish": 72, "title": "Zor"},
 }
 
 @onready var player = $Player
@@ -240,17 +240,20 @@ func _setup_split() -> void:
 
 
 func _spawn_fish() -> void:
-	var near_count := mini(10, _fish_count)
+	var close_count := mini(28, _fish_count)
+	var mid_count := mini(int(float(_fish_count) * 0.72), _fish_count)
 	for i in _fish_count:
 		var fish = FishScript.new()
-		var pos: Vector3
 		var around = _seats[i % _seats.size()].who.global_position
-		if i < near_count:
-			var ang := TAU * float(i) / float(near_count)
-			pos = around + Vector3(cos(ang), randf_range(-1.5, 1.5), sin(ang)) * randf_range(7.0, 13.0)
+		var pos: Vector3
+		if i < close_count:
+			var ang := TAU * float(i) / float(close_count)
+			pos = around + Vector3(cos(ang), randf_range(-8.0, 3.0), sin(ang)) * randf_range(8.0, 20.0)
 			pos = Bounds.clamp_pos(pos, 2.0)
+		elif i < mid_count:
+			pos = Bounds.nearby_water(around, 14.0, 48.0)
 		else:
-			pos = Bounds.random_water(around)
+			pos = Bounds.nearby_water(around, 36.0, 95.0)
 		fish.position = pos
 		add_child(fish)
 

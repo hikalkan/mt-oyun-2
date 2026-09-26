@@ -22,6 +22,22 @@ static func clamp_pos(p: Vector3, padding: float = 2.6) -> Vector3:
 	return p
 
 
+static func nearby_water(around: Vector3, min_dist: float, max_dist: float) -> Vector3:
+	for _i in 12:
+		var ang := randf() * TAU
+		var dist := randf_range(min_dist, max_dist)
+		var x := clampf(around.x + cos(ang) * dist, -HALF + 14.0, HALF - 14.0)
+		var z := clampf(around.z + sin(ang) * dist, -HALF + 14.0, HALF - 14.0)
+		var low := floor_y(x, z) + 6.0
+		var high := -3.0
+		if low > high - 2.0:
+			high = low + 6.0
+		var p := Vector3(x, randf_range(low, high), z)
+		if p.distance_to(around) >= min_dist * 0.8:
+			return p
+	return clamp_pos(around + Vector3(min_dist, -6.0, 8.0), 3.0)
+
+
 static func random_water(avoid: Vector3) -> Vector3:
 	var p := Vector3.ZERO
 	for _i in 10:

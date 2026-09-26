@@ -75,11 +75,11 @@ func got_eaten() -> bool:
 
 
 func _respawn() -> void:
-	var avoid := Vector3(9999, 9999, 9999)
 	var hunter = _nearest_player()
 	if hunter != null:
-		avoid = hunter.global_position
-	global_position = Bounds.random_water(avoid)
+		global_position = Bounds.nearby_water(hunter.global_position, 20.0, 62.0)
+	else:
+		global_position = Bounds.random_water(Vector3(9999, 9999, 9999))
 	scale = base_scale
 	velocity = Vector3.ZERO
 	wander = _new_wander()
