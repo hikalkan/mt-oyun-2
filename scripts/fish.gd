@@ -1,4 +1,4 @@
-extends Area2D
+extends Area3D
 
 const Bounds := preload("res://scripts/sea_bounds.gd")
 const COLORS: Array[Color] = [
@@ -10,14 +10,13 @@ const COLORS: Array[Color] = [
 	Color(0.98, 0.42, 0.12),
 ]
 
-var cruise_speed := 80.0
-var wander := 0.0
-var facing := 1.0
-var velocity := Vector2.ZERO
-var color := Color(1, 0.6, 0.2)
-var pattern := 0
-var base_scale := Vector2.ONE
+var cruise_speed := 3.0
+var wander := Vector3.FORWARD
+var velocity := Vector3.ZERO
+var base_scale := Vector3.ONE
 var _eating := false
+var _wander_wait := 0.0
+var _tail: Node3D
 var player = null
 
 
@@ -27,15 +26,16 @@ func _ready() -> void:
 	collision_mask = 0
 	monitoring = false
 	monitorable = true
-	cruise_speed = randf_range(58.0, 102.0)
-	wander = randf() * TAU
-	pattern = randi() % COLORS.size()
-	color = COLORS[pattern]
-	base_scale = Vector2.ONE * randf_range(0.82, 1.28)
+	cruise_speed = randf_range(2.4, 4.2)
+	wander = _new_wander()
+	_wander_wait = randf_range(1.0, 2.5)
+	var pattern := randi() % COLORS.size()
+	base_scale = Vector3.ONE * randf_range(0.85, 1.35)
 	scale = base_scale
-	var shape := CircleShape2D.new()
-	shape.radius = 13.0
-	var col := CollisionShape2D.new()
+	_build(COLORS[pattern], pattern == 5)
+	var shape := SphereShape3D.new()
+	shape.radius = 0.45
+	var col := CollisionShape3D.new()
 	col.shape = shape
 	add_child(col)
 	player = get_tree().get_first_node_in_group("player")
@@ -43,52 +43,25 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if _eating:
+		_wag(delta)
 		return
-	wander += randf_range(-1.3, 1.3) * delta
-	var desired := Vector2.from_angle(wander) * cruise_speed
+	_wander_wait -= delta
+	if _wander_wait <= 0.0:
+		wander = _new_wander()
+		_wander_wait = randf_range(1.4, 3.2)
+	var desired := wander * cruise_speed
 	if is_instance_valid(player):
-		var offset: Vector2 = global_position - player.global_position
+		var offset: Vector3 = global_position - player.global_position
 		var dist := offset.length()
 		var radius: float = player.scare_radius()
-		if dist < radius and dist > 0.5:
+		if dist < radius and dist > 0.2:
 			var urgency := 1.0 - dist / radius
-			var away := offset / dist
-			var panic := sin(Time.get_ticks_msec() * 0.015) * 0.35 * urgency
-			desired = away.rotated(panic) * (cruise_speed + player.scare_power() * urgency)
-	velocity = velocity.move_toward(desired, 520.0 * delta)
+			desired = offset.normalized() * (cruise_speed + player.scare_power() * urgency)
+	velocity = velocity.move_toward(desired, 8.0 * delta)
 	global_position += velocity * delta
-	_clamp_pos()
-	if velocity.x > 6.0:
-		facing = 1.0
-	elif velocity.x < -6.0:
-		facing = -1.0
-
-
-func _process(_delta: float) -> void:
-	queue_redraw()
-
-
-func _clamp_pos() -> void:
-	var p := global_position
-	var min_x := 100.0
-	var max_x := Bounds.WORLD_W - 100.0
-	var min_y := Bounds.SURFACE_Y + 70.0
-	var max_y := Bounds.SAND_Y - 80.0
-	if p.x < min_x:
-		p.x = min_x
-		velocity.x = absf(velocity.x)
-		wander = 0.2
-	elif p.x > max_x:
-		p.x = max_x
-		velocity.x = -absf(velocity.x)
-		wander = PI
-	if p.y < min_y:
-		p.y = min_y
-		velocity.y = absf(velocity.y)
-	elif p.y > max_y:
-		p.y = max_y
-		velocity.y = -absf(velocity.y)
-	global_position = p
+	global_position = Bounds.clamp_pos(global_position, 1.6)
+	_face()
+	_wag(delta)
 
 
 func got_eaten() -> bool:
@@ -97,55 +70,89 @@ func got_eaten() -> bool:
 	_eating = true
 	set_deferred("monitorable", false)
 	var tw := create_tween()
-	tw.tween_property(self, "scale", base_scale * 0.05, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_property(self, "scale", base_scale * 0.05, 0.16)
 	tw.tween_callback(_respawn)
 	return true
 
 
 func _respawn() -> void:
-	var avoid := Vector2(-99999, -99999)
+	var avoid := Vector3(9999, 9999, 9999)
 	if is_instance_valid(player):
 		avoid = player.global_position
 	global_position = Bounds.random_water(avoid)
 	scale = base_scale
-	velocity = Vector2.ZERO
-	wander = randf() * TAU
+	velocity = Vector3.ZERO
+	wander = _new_wander()
 	_eating = false
 	monitorable = true
 
 
-func _draw() -> void:
-	var wag := sin(Time.get_ticks_msec() * 0.012 + wander) * 6.0
-	var tilt := clampf(velocity.y / 180.0, -0.45, 0.45)
-	if facing < 0.0:
-		tilt = -tilt
-	draw_set_transform(Vector2.ZERO, tilt, Vector2(facing, 1.0))
-	draw_colored_polygon(PackedVector2Array([
-		Vector2(-12, 0),
-		Vector2(-24, -7 + wag * 0.45),
-		Vector2(-24, 7 - wag * 0.45),
-	]), color.darkened(0.22))
-	draw_colored_polygon(_ellipse(Vector2.ZERO, 17.4, 9.1, 14), color.darkened(0.3))
-	draw_colored_polygon(_ellipse(Vector2.ZERO, 15.6, 7.6, 14), color)
-	draw_colored_polygon(_ellipse(Vector2(1, 2.6), 10.0, 4.0, 10), color.lightened(0.32))
-	if pattern == 5:
-		draw_line(Vector2(5, -7.4), Vector2(3, 7.4), Color(1, 1, 1, 0.95), 3.4)
-		draw_line(Vector2(-5, -7.2), Vector2(-6, 7.2), Color(1, 1, 1, 0.95), 2.8)
-	elif pattern == 1:
-		draw_line(Vector2(2, -7), Vector2(0, 7), color.darkened(0.35), 2.4)
-		draw_line(Vector2(-6, -6), Vector2(-7, 6), color.darkened(0.35), 2.0)
-	elif pattern == 2:
-		draw_line(Vector2(8, -3), Vector2(-4, 2), Color(1, 1, 1, 0.4), 2.0)
-	draw_colored_polygon(PackedVector2Array([
-		Vector2(-2, -7), Vector2(2, -13), Vector2(6, -6),
-	]), color.darkened(0.15))
-	draw_circle(Vector2(8.2, -1.8), 2.3, Color(0.96, 0.96, 0.94))
-	draw_circle(Vector2(9.0, -1.8), 1.15, Color(0.05, 0.06, 0.08))
+func _face() -> void:
+	if velocity.length() < 0.2:
+		return
+	var ahead := velocity.normalized()
+	var up := Vector3.UP
+	if absf(ahead.dot(Vector3.UP)) > 0.92:
+		up = Vector3.FORWARD
+	look_at(global_position + velocity, up)
 
 
-func _ellipse(center: Vector2, rx: float, ry: float, n: int) -> PackedVector2Array:
-	var pts := PackedVector2Array()
-	for i in n:
-		var a := TAU * float(i) / float(n)
-		pts.append(center + Vector2(cos(a) * rx, sin(a) * ry))
-	return pts
+func _wag(delta: float) -> void:
+	if _tail:
+		_tail.rotation.y = sin(Time.get_ticks_msec() * 0.012) * 0.45
+	else:
+		rotation.y += 0.0 * delta
+
+
+func _new_wander() -> Vector3:
+	return Vector3(randf_range(-1.0, 1.0), randf_range(-0.35, 0.35), randf_range(-1.0, 1.0)).normalized()
+
+
+func _build(color: Color, clown: bool) -> void:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.4
+	var body := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.28
+	sphere.height = 0.56
+	sphere.radial_segments = 12
+	sphere.rings = 8
+	body.mesh = sphere
+	body.scale = Vector3(0.55, 0.42, 1.0)
+	body.material_override = mat
+	add_child(body)
+	if clown:
+		var band := MeshInstance3D.new()
+		var band_mesh := SphereMesh.new()
+		band_mesh.radius = 0.3
+		band_mesh.height = 0.6
+		band.mesh = band_mesh
+		band.scale = Vector3(0.62, 0.48, 0.12)
+		band.position = Vector3(0, 0, -0.05)
+		var white := StandardMaterial3D.new()
+		white.albedo_color = Color(0.98, 0.98, 0.96)
+		band.material_override = white
+		add_child(band)
+	_tail = Node3D.new()
+	_tail.position = Vector3(0, 0, 0.32)
+	add_child(_tail)
+	var tail := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.02, 0.28, 0.22)
+	tail.mesh = box
+	tail.position = Vector3(0, 0, 0.08)
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = color.darkened(0.2)
+	tail.material_override = dark
+	_tail.add_child(tail)
+	var eye := MeshInstance3D.new()
+	var em := SphereMesh.new()
+	em.radius = 0.045
+	em.height = 0.09
+	eye.mesh = em
+	eye.position = Vector3(0.12, 0.06, -0.18)
+	var emat := StandardMaterial3D.new()
+	emat.albedo_color = Color(0.05, 0.05, 0.08)
+	eye.material_override = emat
+	add_child(eye)

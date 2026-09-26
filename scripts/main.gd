@@ -1,49 +1,62 @@
-extends Node2D
+extends Node3D
 
 const FishScript := preload("res://scripts/fish.gd")
 const Bounds := preload("res://scripts/sea_bounds.gd")
 
-@onready var player = $Creatures/Player
+@onready var player = $Player
 @onready var score_label: Label = $HUD/Root/Score
 @onready var form_label: Label = $HUD/Root/Form
+@onready var camera_label: Label = $HUD/Root/CameraMode
 
 var score := 0
-var _bubble_tex: Texture2D
+var _env: Environment
 var _score_tween: Tween
 
 
 func _ready() -> void:
-	var mat := $Sea.material as ShaderMaterial
-	if mat:
-		mat.set_shader_parameter("surface_y", Bounds.SURFACE_Y)
-		mat.set_shader_parameter("sand_y", Bounds.SAND_Y)
-	_bubble_tex = _make_bubble_texture()
-	_add_ambient_bubbles()
+	_build_sky()
+	_build_sun()
+	_build_water()
+	_build_sand()
 	player.ate_fish.connect(_on_ate)
 	player.form_changed.connect(_on_form)
+	player.camera_changed.connect(_on_camera)
 	_style_form()
-	for i in 34:
+	camera_label.text = player.camera_name()
+	for i in 32:
 		var fish = FishScript.new()
-		var pos: Vector2
+		var pos: Vector3
 		if i < 10:
 			var ang := TAU * float(i) / 10.0
-			pos = player.global_position + Vector2(cos(ang), sin(ang)) * randf_range(260.0, 500.0)
-			pos.x = clampf(pos.x, 180.0, Bounds.WORLD_W - 180.0)
-			pos.y = clampf(pos.y, Bounds.SURFACE_Y + 110.0, Bounds.SAND_Y - 130.0)
+			pos = player.global_position + Vector3(cos(ang), randf_range(-1.5, 1.5), sin(ang)) * randf_range(7.0, 13.0)
+			pos = Bounds.clamp_pos(pos, 2.0)
 		else:
 			pos = Bounds.random_water(player.global_position)
 		fish.position = pos
-		$Creatures.add_child(fish)
+		add_child(fish)
 
 
-func _on_ate(at: Vector2) -> void:
+func _process(_delta: float) -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or _env == null:
+		return
+	var depth := clampf(-cam.global_position.y / 32.0, 0.0, 1.0)
+	if cam.global_position.y > 0.8:
+		_env.fog_density = 0.002
+		_env.fog_light_color = Color(0.55, 0.75, 0.92)
+		_env.ambient_light_energy = 0.8
+	else:
+		_env.fog_density = lerpf(0.028, 0.06, depth)
+		_env.fog_light_color = Color(0.07, 0.32, 0.55).lerp(Color(0.015, 0.06, 0.14), depth)
+		_env.ambient_light_energy = lerpf(0.5, 0.18, depth)
+
+
+func _on_ate(at: Vector3) -> void:
 	score += 1
 	score_label.text = "Yediğin balık: %d" % score
 	var pop := PlusOne.new()
-	pop.position = at
-	pop.z_index = 20
+	pop.position = at + Vector3(0, 0.6, 0)
 	add_child(pop)
-	_spawn_bubbles(at, 12, true)
 	if _score_tween:
 		_score_tween.kill()
 	score_label.scale = Vector2(1.12, 1.12)
@@ -53,7 +66,10 @@ func _on_ate(at: Vector2) -> void:
 
 func _on_form(_form_label: String) -> void:
 	_style_form()
-	_spawn_bubbles(player.global_position, 20, true)
+
+
+func _on_camera(mode_label: String) -> void:
+	camera_label.text = mode_label
 
 
 func _style_form() -> void:
@@ -64,84 +80,88 @@ func _style_form() -> void:
 		form_label.add_theme_color_override("font_color", Color(0.72, 0.9, 1))
 
 
-func _add_ambient_bubbles() -> void:
-	var spots: Array[Vector2] = [
-		Vector2(700, 850),
-		Vector2(1400, 1450),
-		Vector2(2100, 1000),
-		Vector2(2500, 1600),
-		Vector2(3200, 900),
-		Vector2(3700, 1400),
-	]
-	for spot in spots:
-		_spawn_bubbles(spot, 26, false)
+func _build_sky() -> void:
+	_env = Environment.new()
+	_env.background_mode = Environment.BG_SKY
+	var sky_mat := ProceduralSkyMaterial.new()
+	sky_mat.sky_top_color = Color(0.25, 0.5, 0.92)
+	sky_mat.sky_horizon_color = Color(0.64, 0.84, 0.97)
+	sky_mat.ground_horizon_color = Color(0.12, 0.32, 0.5)
+	sky_mat.ground_bottom_color = Color(0.02, 0.08, 0.18)
+	var sky := Sky.new()
+	sky.sky_material = sky_mat
+	_env.sky = sky
+	_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	_env.ambient_light_color = Color(0.5, 0.68, 0.82)
+	_env.ambient_light_energy = 0.65
+	_env.fog_enabled = true
+	_env.fog_light_color = Color(0.12, 0.4, 0.6)
+	_env.fog_density = 0.018
+	_env.fog_aerial_perspective = 0.4
+	var world := WorldEnvironment.new()
+	world.environment = _env
+	add_child(world)
 
 
-func _spawn_bubbles(at: Vector2, amount: int, one_shot: bool) -> void:
-	var p := CPUParticles2D.new()
-	p.texture = _bubble_tex
-	p.position = at
-	p.amount = amount
-	p.lifetime = 0.9 if one_shot else 6.0
-	p.one_shot = one_shot
-	p.explosiveness = 0.9 if one_shot else 0.0
-	p.preprocess = 0.0 if one_shot else 2.5
-	p.direction = Vector2(0, -1)
-	p.spread = 50.0 if one_shot else 18.0
-	p.gravity = Vector2(6, -24)
-	p.initial_velocity_min = 40.0 if one_shot else 14.0
-	p.initial_velocity_max = 110.0 if one_shot else 40.0
-	p.scale_amount_min = 0.35
-	p.scale_amount_max = 0.95 if one_shot else 1.15
-	p.color_ramp = _fade_ramp()
-	p.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
-	p.emission_rect_extents = Vector2(30, 20) if one_shot else Vector2(460, 340)
-	p.z_index = 15 if one_shot else 1
-	p.local_coords = true
-	add_child(p)
-	p.emitting = true
-	if one_shot:
-		p.restart()
-		get_tree().create_timer(1.6).timeout.connect(p.queue_free)
+func _build_sun() -> void:
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-62, 28, 0)
+	sun.light_color = Color(1.0, 0.97, 0.9)
+	sun.light_energy = 1.35
+	sun.shadow_enabled = true
+	add_child(sun)
+	var fill := DirectionalLight3D.new()
+	fill.rotation_degrees = Vector3(-20, 200, 0)
+	fill.light_color = Color(0.45, 0.7, 0.9)
+	fill.light_energy = 0.35
+	add_child(fill)
 
 
-func _fade_ramp() -> Gradient:
-	var g := Gradient.new()
-	g.set_color(0, Color(0.85, 0.95, 1.0, 0.0))
-	g.set_color(1, Color(0.85, 0.95, 1.0, 0.0))
-	g.add_point(0.18, Color(0.92, 0.98, 1.0, 0.55))
-	return g
+func _build_water() -> void:
+	var water := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(200, 200)
+	plane.subdivide_width = 70
+	plane.subdivide_depth = 70
+	water.mesh = plane
+	water.position = Vector3(0, Bounds.SURFACE_Y, 0)
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/sea.gdshader")
+	water.material_override = mat
+	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(water)
 
 
-func _make_bubble_texture() -> Texture2D:
-	var size := 16
-	var img := Image.create_empty(size, size, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	var center := Vector2(7.5, 7.5)
-	for y in size:
-		for x in size:
-			var d := Vector2(float(x) + 0.5, float(y) + 0.5).distance_to(center)
-			if d < 6.8 and d > 4.6:
-				var a := clampf(1.0 - absf(d - 5.7) / 1.1, 0.0, 1.0)
-				img.set_pixel(x, y, Color(0.92, 0.98, 1.0, a * 0.95))
-			elif d < 2.2 and x < 7 and y < 7:
-				img.set_pixel(x, y, Color(1, 1, 1, 0.55))
-	return ImageTexture.create_from_image(img)
+func _build_sand() -> void:
+	var bed := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(190, 190)
+	bed.mesh = plane
+	bed.position = Vector3(0, Bounds.BED_Y, 0)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.62, 0.54, 0.36)
+	mat.roughness = 1.0
+	bed.material_override = mat
+	add_child(bed)
 
 
-class PlusOne extends Node2D:
-	var life := 0.75
+class PlusOne extends Node3D:
+	var life := 0.8
+
+	func _ready() -> void:
+		var label := Label3D.new()
+		label.text = "+1"
+		label.font_size = 72
+		label.pixel_size = 0.012
+		label.outline_size = 12
+		label.modulate = Color(1, 0.95, 0.55)
+		label.outline_modulate = Color(0.04, 0.12, 0.24)
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.no_depth_test = true
+		add_child(label)
 
 	func _process(delta: float) -> void:
-		position.y -= 48.0 * delta
+		position.y += 1.4 * delta
 		life -= delta
-		queue_redraw()
 		if life <= 0.0:
 			queue_free()
-
-	func _draw() -> void:
-		var font := ThemeDB.fallback_font
-		var col := Color(1, 0.95, 0.55, clampf(life / 0.28, 0.0, 1.0))
-		var pos := Vector2(-16, 0)
-		draw_string_outline(font, pos, "+1", HORIZONTAL_ALIGNMENT_LEFT, -1, 32, 5, Color(0.04, 0.12, 0.24, col.a))
-		draw_string(font, pos, "+1", HORIZONTAL_ALIGNMENT_LEFT, -1, 32, col)
