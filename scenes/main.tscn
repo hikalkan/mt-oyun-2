@@ -80,4 +80,4 @@ theme_override_constants/outline_size = 6
 theme_override_font_sizes/font_size = 18
 text = "W A S D veya oklar: yüz    Fare: bak    Boşluk: yukarı    Ctrl: aşağı
 M: değiş    P: kamera    Q: su fışkırt    K: ses    Esc: fareyi bırak
-Balık yemezsen tokluk biter ve ölürsün"
+Balık yemezsen ölürsün. Hedefe ulaşınca kazanırsın"

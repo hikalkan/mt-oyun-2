@@ -7,8 +7,10 @@ signal camera_changed(mode_label: String)
 enum Form { WHALE, SHARK }
 
 const Bounds := preload("res://scripts/sea_bounds.gd")
-const BODY_LAYER := 2
-const HOOD_LAYER := 4
+var pad_id := -1
+var body_layer := 2
+var hood_layer := 4
+var owns_screen := true
 
 var form := Form.WHALE
 var alive := true
@@ -59,11 +61,20 @@ func _ready() -> void:
 	add_child(_voice)
 	_whale_call = _make_call(true)
 	_shark_call = _make_call(false)
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not alive:
+		return
+	if pad_id >= 0:
+		if event is InputEventJoypadButton and event.device == pad_id and event.pressed and not event.is_echo():
+			var pad := event as InputEventJoypadButton
+			if pad.button_index == JOY_BUTTON_X:
+				_switch_form()
+			elif pad.button_index == JOY_BUTTON_Y:
+				_toggle_camera()
+			elif pad.button_index == JOY_BUTTON_LEFT_SHOULDER:
+				_speak()
 		return
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -97,9 +108,36 @@ func die() -> void:
 		jet.visible = false
 
 
+func begin_as_shark() -> void:
+	form = Form.SHARK
+	_apply_form()
+	form_changed.emit(form_name())
+
+
+func set_owns_screen(owns: bool) -> void:
+	owns_screen = owns
+	_show_camera()
+
+
+func set_partner_body(layer: int) -> void:
+	_fps.cull_mask = 1 | hood_layer | layer
+
+
+func view_camera() -> Camera3D:
+	if fps_mode:
+		return _fps
+	return _chase
+
+
 func _physics_process(delta: float) -> void:
 	if not alive:
 		return
+	if pad_id >= 0:
+		var look_x := _joy_axis(JOY_AXIS_RIGHT_X)
+		var look_y := _joy_axis(JOY_AXIS_RIGHT_Y)
+		yaw -= look_x * 2.5 * delta
+		pitch -= look_y * 2.0 * delta
+		pitch = clampf(pitch, -1.05, 1.05)
 	_time += delta
 	if _switch_lock > 0.0:
 		_switch_lock -= delta
@@ -126,18 +164,22 @@ func _physics_process(delta: float) -> void:
 
 
 func _wish_dir() -> Vector3:
-	var forward := Input.get_action_strength("ui_up") - Input.get_action_strength("ui_down")
-	var strafe := Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left")
-	if Input.is_physical_key_pressed(KEY_W):
+	if pad_id >= 0:
+		return _pad_dir()
+	return _key_dir()
+
+
+func _key_dir() -> Vector3:
+	var forward := 0.0
+	var strafe := 0.0
+	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
 		forward += 1.0
-	if Input.is_physical_key_pressed(KEY_S):
+	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
 		forward -= 1.0
-	if Input.is_physical_key_pressed(KEY_D):
+	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
 		strafe += 1.0
-	if Input.is_physical_key_pressed(KEY_A):
+	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
 		strafe -= 1.0
-	forward = clampf(forward, -1.0, 1.0)
-	strafe = clampf(strafe, -1.0, 1.0)
 	var dir := _pitch.global_transform.basis * Vector3(strafe, 0.0, -forward)
 	if Input.is_physical_key_pressed(KEY_SPACE):
 		dir += Vector3.UP
@@ -146,7 +188,37 @@ func _wish_dir() -> Vector3:
 	return dir
 
 
+func _pad_dir() -> Vector3:
+	var forward := -_joy_axis(JOY_AXIS_LEFT_Y)
+	var strafe := _joy_axis(JOY_AXIS_LEFT_X)
+	if Input.is_joy_button_pressed(pad_id, JOY_BUTTON_DPAD_UP):
+		forward += 1.0
+	if Input.is_joy_button_pressed(pad_id, JOY_BUTTON_DPAD_DOWN):
+		forward -= 1.0
+	if Input.is_joy_button_pressed(pad_id, JOY_BUTTON_DPAD_RIGHT):
+		strafe += 1.0
+	if Input.is_joy_button_pressed(pad_id, JOY_BUTTON_DPAD_LEFT):
+		strafe -= 1.0
+	forward = clampf(forward, -1.0, 1.0)
+	strafe = clampf(strafe, -1.0, 1.0)
+	var dir := _pitch.global_transform.basis * Vector3(strafe, 0.0, -forward)
+	if Input.is_joy_button_pressed(pad_id, JOY_BUTTON_A) or _joy_axis(JOY_AXIS_TRIGGER_RIGHT) > 0.45:
+		dir += Vector3.UP
+	if Input.is_joy_button_pressed(pad_id, JOY_BUTTON_B) or _joy_axis(JOY_AXIS_TRIGGER_LEFT) > 0.45:
+		dir += Vector3.DOWN
+	return dir
+
+
+func _joy_axis(axis: JoyAxis) -> float:
+	var value := Input.get_joy_axis(pad_id, axis)
+	if absf(value) < 0.2:
+		return 0.0
+	return value
+
+
 func _q_held() -> bool:
+	if pad_id >= 0:
+		return Input.is_joy_button_pressed(pad_id, JOY_BUTTON_RIGHT_SHOULDER)
 	return Input.is_physical_key_pressed(KEY_Q)
 
 
@@ -210,8 +282,8 @@ func _toggle_camera() -> void:
 
 
 func _show_camera() -> void:
-	_chase.current = not fps_mode
-	_fps.current = fps_mode
+	_chase.current = owns_screen and not fps_mode
+	_fps.current = owns_screen and fps_mode
 	_whale_hood.visible = fps_mode and form == Form.WHALE
 	_shark_hood.visible = fps_mode and form == Form.SHARK
 
@@ -361,13 +433,13 @@ func _build_cameras() -> void:
 	_chase.fov = 58.0
 	_chase.near = 0.15
 	_chase.far = 1400.0
-	_chase.cull_mask = 0xfffff & ~HOOD_LAYER
+	_chase.cull_mask = 0xfffff & ~hood_layer
 	_pitch.add_child(_chase)
 	_fps = Camera3D.new()
 	_fps.fov = 72.0
 	_fps.near = 0.04
 	_fps.far = 1400.0
-	_fps.cull_mask = 1 | HOOD_LAYER
+	_fps.cull_mask = 1 | hood_layer
 	_pitch.add_child(_fps)
 	_whale_hood = _hood(Color(0.16, 0.4, 0.78), Vector3(0.9, 0.14, 0.35), Vector3(0, -0.42, -1.35))
 	_shark_hood = _hood(Color(0.45, 0.48, 0.52), Vector3(0.28, 0.08, 0.55), Vector3(0, -0.28, -0.95))
@@ -384,7 +456,7 @@ func _hood(color: Color, scl: Vector3, pos: Vector3) -> MeshInstance3D:
 	n.scale = scl
 	n.position = pos
 	n.material_override = _mat(color, 0.35, false)
-	n.layers = HOOD_LAYER
+	n.layers = hood_layer
 	n.visible = false
 	return n
 
@@ -466,7 +538,7 @@ func _place(parent: Node3D, mesh: Mesh, pos: Vector3, rot: Vector3, scl: Vector3
 	n.rotation = rot
 	n.scale = scl
 	n.material_override = mat
-	n.layers = BODY_LAYER
+	n.layers = body_layer
 	parent.add_child(n)
 	return n
 

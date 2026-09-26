@@ -17,7 +17,6 @@ var base_scale := Vector3.ONE
 var _eating := false
 var _wander_wait := 0.0
 var _tail: Node3D
-var player = null
 
 
 func _ready() -> void:
@@ -38,7 +37,6 @@ func _ready() -> void:
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	add_child(col)
-	player = get_tree().get_first_node_in_group("player")
 
 
 func _physics_process(delta: float) -> void:
@@ -50,13 +48,14 @@ func _physics_process(delta: float) -> void:
 		wander = _new_wander()
 		_wander_wait = randf_range(1.4, 3.2)
 	var desired := wander * cruise_speed
-	if is_instance_valid(player):
-		var offset: Vector3 = global_position - player.global_position
+	var hunter = _nearest_player()
+	if hunter != null:
+		var offset: Vector3 = global_position - hunter.global_position
 		var dist := offset.length()
-		var radius: float = player.scare_radius()
+		var radius: float = hunter.scare_radius()
 		if dist < radius and dist > 0.2:
 			var urgency := 1.0 - dist / radius
-			desired = offset.normalized() * (cruise_speed + player.scare_power() * urgency)
+			desired = offset.normalized() * (cruise_speed + hunter.scare_power() * urgency)
 	velocity = velocity.move_toward(desired, 8.0 * delta)
 	global_position += velocity * delta
 	global_position = Bounds.clamp_pos(global_position, 2.8)
@@ -77,8 +76,9 @@ func got_eaten() -> bool:
 
 func _respawn() -> void:
 	var avoid := Vector3(9999, 9999, 9999)
-	if is_instance_valid(player):
-		avoid = player.global_position
+	var hunter = _nearest_player()
+	if hunter != null:
+		avoid = hunter.global_position
 	global_position = Bounds.random_water(avoid)
 	scale = base_scale
 	velocity = Vector3.ZERO
@@ -102,6 +102,19 @@ func _wag(delta: float) -> void:
 		_tail.rotation.y = sin(Time.get_ticks_msec() * 0.012) * 0.45
 	else:
 		rotation.y += 0.0 * delta
+
+
+func _nearest_player():
+	var best = null
+	var best_d := 1.0e20
+	for who in get_tree().get_nodes_in_group("player"):
+		if not is_instance_valid(who) or not who.alive:
+			continue
+		var dist := global_position.distance_squared_to(who.global_position)
+		if dist < best_d:
+			best_d = dist
+			best = who
+	return best
 
 
 func _new_wander() -> Vector3:
