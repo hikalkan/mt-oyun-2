@@ -183,7 +183,6 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity = velocity.move_toward(Vector3.ZERO, drag * delta)
 	move_and_slide()
-	_aim_chase()
 	var clamped := Bounds.clamp_pos(global_position)
 	if not is_equal_approx(clamped.x, global_position.x):
 		velocity.x = 0.0
@@ -192,7 +191,7 @@ func _physics_process(delta: float) -> void:
 	if not is_equal_approx(clamped.z, global_position.z):
 		velocity.z = 0.0
 	global_position = clamped
-
+	_seat_cameras()
 	_animate()
 
 
@@ -344,6 +343,20 @@ func _apply_form() -> void:
 		_fps.position = Vector3(0.0, 0.08, -1.25)
 	_spout.emitting = false
 	_show_camera()
+
+
+func _seat_cameras() -> void:
+	if form == Form.WHALE:
+		_chase.position = Vector3(0.0, 2.4, 9.0)
+	else:
+		_chase.position = Vector3(0.0, 1.5, 5.6)
+	var chase_pos := Bounds.above_floor(_chase.global_position, 3.4)
+	if chase_pos.y > _chase.global_position.y:
+		_chase.global_position = chase_pos
+	var eye_pos := Bounds.above_floor(_fps.global_position, 2.4)
+	if eye_pos.y > _fps.global_position.y:
+		_fps.global_position = eye_pos
+	_aim_chase()
 
 
 func _aim_chase() -> void:

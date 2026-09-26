@@ -72,14 +72,14 @@ func _update_fog() -> void:
 	var cam := _fog_camera()
 	if cam == null or _env == null:
 		return
-	var depth := clampf(-cam.global_position.y / absf(Bounds.BED_Y), 0.0, 1.0)
+	var depth := clampf(-cam.global_position.y / absf(Bounds.FLOOR_Y), 0.0, 1.0)
 	if cam.global_position.y > 0.6:
 		_env.fog_density = 0.0012
 		_env.fog_light_color = Color(0.62, 0.78, 0.9)
 		_env.ambient_light_energy = 0.85
 		_env.ambient_light_color = Color(0.62, 0.74, 0.86)
 	else:
-		_env.fog_density = lerpf(0.0065, 0.02, depth)
+		_env.fog_density = lerpf(0.0045, 0.011, depth)
 		_env.fog_light_color = Color(0.1, 0.38, 0.55).lerp(Color(0.012, 0.04, 0.09), depth)
 		_env.ambient_light_energy = lerpf(0.55, 0.12, depth)
 		_env.ambient_light_color = Color(0.45, 0.62, 0.74).lerp(Color(0.05, 0.12, 0.2), depth)
@@ -775,9 +775,10 @@ func _build_sun() -> void:
 func _build_water() -> void:
 	var water := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(1200, 1200)
-	plane.subdivide_width = 96
-	plane.subdivide_depth = 96
+	var span := Bounds.visual_span()
+	plane.size = Vector2(span, span)
+	plane.subdivide_width = 80
+	plane.subdivide_depth = 80
 	water.mesh = plane
 	water.position = Vector3(0, Bounds.SURFACE_Y, 0)
 	var mat := ShaderMaterial.new()
@@ -794,20 +795,19 @@ func _build_water() -> void:
 func _build_sand() -> void:
 	var bed := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	var span := Bounds.HALF * 2.0 + 40.0
+	var span := Bounds.visual_span()
 	plane.size = Vector2(span, span)
-	plane.subdivide_width = 56
-	plane.subdivide_depth = 56
+	plane.subdivide_width = 72
+	plane.subdivide_depth = 72
 	bed.mesh = plane
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://assets/shaders/sand.gdshader")
-	mat.set_shader_parameter("half_extent", Bounds.HALF)
-	mat.set_shader_parameter("shelf_y", Bounds.SHELF_Y)
-	mat.set_shader_parameter("bed_y", Bounds.BED_Y)
-	mat.set_shader_parameter("shelf_start", Bounds.SHELF_START)
-	mat.set_shader_parameter("shelf_end", Bounds.SHELF_END)
+	mat.set_shader_parameter("floor_y", Bounds.FLOOR_Y)
 	bed.material_override = mat
 	bed.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var half_span := span * 0.5
+	bed.custom_aabb = AABB(Vector3(-half_span, Bounds.FLOOR_Y - 6.0, -half_span), Vector3(span, 16.0, span))
+	bed.extra_cull_margin = 200.0
 	add_child(bed)
 
 
