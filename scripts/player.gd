@@ -156,7 +156,7 @@ func _apply_form() -> void:
 		drag = 3.5
 		_mouth.position = Vector3(0.0, 0.1, -2.4)
 		_mouth_shape.radius = 1.35
-		_chase.position = Vector3(3.6, 2.5, 7.6)
+		_chase.position = Vector3(0.0, 2.4, 9.0)
 		_fps.position = Vector3(0.0, 0.28, -2.05)
 		_spout.position = Vector3(0.0, 0.85, -0.2)
 	else:
@@ -165,7 +165,7 @@ func _apply_form() -> void:
 		drag = 7.0
 		_mouth.position = Vector3(0.0, 0.0, -1.55)
 		_mouth_shape.radius = 0.62
-		_chase.position = Vector3(2.2, 1.45, 4.8)
+		_chase.position = Vector3(0.0, 1.5, 5.6)
 		_fps.position = Vector3(0.0, 0.08, -1.25)
 	_spout.emitting = false
 	_show_camera()
