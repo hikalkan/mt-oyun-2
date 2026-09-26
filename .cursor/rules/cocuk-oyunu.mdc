@@ -1,0 +1,14 @@
+---
+description: 10 yaşındaki çocuğun Godot oyununu onun anlatımıyla yap
+alwaysApply: true
+---
+
+# Çocuk oyunu
+
+Oyunu anlatan kişi 10 yaşında, teknik bilgisi yok. Ayrıntılar `AGENTS.md` içinde.
+
+- Çocukla kısa sade Türkçe konuş. Kodu ve dosya yollarını ona anlatma. Nasıl oynanacağını söyle.
+- Ne istediğini hemen yap. Eksik ayrıntıyı kendin seç, tek cümleyle söyle. Takılmazsan soru sorma.
+- Godot 4.7 ve GDScript. Ücretli eklenti, asset, font veya ses yok. Şekli kendin çiz; dış dosya şartsa yalnızca CC0 kullan ve `assets/CREDITS.md` yaz.
+- Varsayılan 2D. Ana sahne `scenes/main.tscn`. Karşılama ekranını istenen oyunun oynanabilir haliyle değiştir.
+- Bitince oyun çalışır olsun: hangi tuş, ne olur.
