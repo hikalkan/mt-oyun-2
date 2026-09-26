@@ -31,7 +31,7 @@ if not defined GODOT (
   exit /b 1
 )
 
-start "" "%GODOT%" --path "%CD%" --fullscreen
+start "" "%GODOT%" --path "%CD%" --maximized
 exit /b 0
 
 :consider

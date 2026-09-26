@@ -11,7 +11,7 @@ script = ExtResource("1_main")
 script = ExtResource("3_decor")
 
 [node name="Player" type="CharacterBody3D" parent="." groups=["player"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -12, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -18, 0)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("2_player")
@@ -79,4 +79,4 @@ theme_override_colors/font_outline_color = Color(0.02, 0.1, 0.22, 0.9)
 theme_override_constants/outline_size = 6
 theme_override_font_sizes/font_size = 18
 text = "W A S D veya oklar: yüz    Fare: bak    Boşluk: yukarı    Ctrl: aşağı
-M: değiş    P: kamera    Q: su fışkırt    Esc: fareyi bırak"
+M: değiş    P: kamera    Q: su fışkırt    K: ses    Esc: fareyi bırak"

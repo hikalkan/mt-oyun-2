@@ -23,7 +23,7 @@ func _ready() -> void:
 	player.camera_changed.connect(_on_camera)
 	_style_form()
 	camera_label.text = player.camera_name()
-	for i in 32:
+	for i in 44:
 		var fish = FishScript.new()
 		var pos: Vector3
 		if i < 10:
@@ -40,15 +40,17 @@ func _process(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null or _env == null:
 		return
-	var depth := clampf(-cam.global_position.y / 32.0, 0.0, 1.0)
-	if cam.global_position.y > 0.8:
-		_env.fog_density = 0.002
-		_env.fog_light_color = Color(0.55, 0.75, 0.92)
-		_env.ambient_light_energy = 0.8
+	var depth := clampf(-cam.global_position.y / absf(Bounds.BED_Y), 0.0, 1.0)
+	if cam.global_position.y > 0.6:
+		_env.fog_density = 0.0012
+		_env.fog_light_color = Color(0.62, 0.78, 0.9)
+		_env.ambient_light_energy = 0.85
+		_env.ambient_light_color = Color(0.62, 0.74, 0.86)
 	else:
-		_env.fog_density = lerpf(0.028, 0.06, depth)
-		_env.fog_light_color = Color(0.07, 0.32, 0.55).lerp(Color(0.015, 0.06, 0.14), depth)
-		_env.ambient_light_energy = lerpf(0.5, 0.18, depth)
+		_env.fog_density = lerpf(0.0065, 0.02, depth)
+		_env.fog_light_color = Color(0.1, 0.38, 0.55).lerp(Color(0.012, 0.04, 0.09), depth)
+		_env.ambient_light_energy = lerpf(0.55, 0.12, depth)
+		_env.ambient_light_color = Color(0.45, 0.62, 0.74).lerp(Color(0.05, 0.12, 0.2), depth)
 
 
 func _on_ate(at: Vector3) -> void:
@@ -84,20 +86,32 @@ func _build_sky() -> void:
 	_env = Environment.new()
 	_env.background_mode = Environment.BG_SKY
 	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.25, 0.5, 0.92)
-	sky_mat.sky_horizon_color = Color(0.64, 0.84, 0.97)
-	sky_mat.ground_horizon_color = Color(0.12, 0.32, 0.5)
-	sky_mat.ground_bottom_color = Color(0.02, 0.08, 0.18)
+	sky_mat.sky_top_color = Color(0.12, 0.32, 0.72)
+	sky_mat.sky_horizon_color = Color(0.78, 0.88, 0.95)
+	sky_mat.sky_curve = 0.12
+	sky_mat.ground_horizon_color = Color(0.05, 0.2, 0.34)
+	sky_mat.ground_bottom_color = Color(0.01, 0.04, 0.1)
+	sky_mat.ground_curve = 0.08
+	sky_mat.sun_angle_max = 22.0
+	sky_mat.energy_multiplier = 1.15
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	_env.sky = sky
+	_env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	_env.tonemap_exposure = 1.05
 	_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	_env.ambient_light_color = Color(0.5, 0.68, 0.82)
-	_env.ambient_light_energy = 0.65
+	_env.ambient_light_color = Color(0.45, 0.62, 0.74)
+	_env.ambient_light_energy = 0.55
 	_env.fog_enabled = true
-	_env.fog_light_color = Color(0.12, 0.4, 0.6)
-	_env.fog_density = 0.018
-	_env.fog_aerial_perspective = 0.4
+	_env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+	_env.fog_light_color = Color(0.1, 0.36, 0.52)
+	_env.fog_density = 0.008
+	_env.fog_aerial_perspective = 0.72
+	_env.fog_sky_affect = 0.35
+	_env.glow_enabled = true
+	_env.glow_intensity = 0.22
+	_env.glow_strength = 0.55
+	_env.glow_bloom = 0.08
 	var world := WorldEnvironment.new()
 	world.environment = _env
 	add_child(world)
@@ -105,44 +119,81 @@ func _build_sky() -> void:
 
 func _build_sun() -> void:
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-62, 28, 0)
-	sun.light_color = Color(1.0, 0.97, 0.9)
-	sun.light_energy = 1.35
+	sun.name = "Sun"
+	sun.rotation_degrees = Vector3(-46, 34, 0)
+	sun.light_color = Color(1.0, 0.96, 0.88)
+	sun.light_energy = 1.6
 	sun.shadow_enabled = true
+	sun.directional_shadow_max_distance = 90.0
 	add_child(sun)
 	var fill := DirectionalLight3D.new()
-	fill.rotation_degrees = Vector3(-20, 200, 0)
-	fill.light_color = Color(0.45, 0.7, 0.9)
-	fill.light_energy = 0.35
+	fill.rotation_degrees = Vector3(-18, 210, 0)
+	fill.light_color = Color(0.35, 0.58, 0.78)
+	fill.light_energy = 0.28
 	add_child(fill)
 
 
 func _build_water() -> void:
 	var water := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(200, 200)
-	plane.subdivide_width = 70
-	plane.subdivide_depth = 70
+	plane.size = Vector2(1200, 1200)
+	plane.subdivide_width = 96
+	plane.subdivide_depth = 96
 	water.mesh = plane
 	water.position = Vector3(0, Bounds.SURFACE_Y, 0)
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://assets/shaders/sea.gdshader")
+	var sun := get_node_or_null("Sun")
+	if sun is DirectionalLight3D:
+		mat.set_shader_parameter("sun_dir", -(sun as DirectionalLight3D).global_transform.basis.z)
 	water.material_override = mat
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(water)
+	_build_rays()
 
 
 func _build_sand() -> void:
 	var bed := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(190, 190)
+	var span := Bounds.HALF * 2.0 + 40.0
+	plane.size = Vector2(span, span)
+	plane.subdivide_width = 56
+	plane.subdivide_depth = 56
 	bed.mesh = plane
-	bed.position = Vector3(0, Bounds.BED_Y, 0)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.62, 0.54, 0.36)
-	mat.roughness = 1.0
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/sand.gdshader")
+	mat.set_shader_parameter("half_extent", Bounds.HALF)
+	mat.set_shader_parameter("shelf_y", Bounds.SHELF_Y)
+	mat.set_shader_parameter("bed_y", Bounds.BED_Y)
+	mat.set_shader_parameter("shelf_start", Bounds.SHELF_START)
+	mat.set_shader_parameter("shelf_end", Bounds.SHELF_END)
 	bed.material_override = mat
+	bed.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(bed)
+
+
+func _build_rays() -> void:
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.albedo_color = Color(0.72, 0.88, 1.0, 0.04)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 260926
+	for i in 11:
+		var ray := MeshInstance3D.new()
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = rng.randf_range(4.0, 8.0)
+		mesh.bottom_radius = mesh.top_radius * 1.4
+		mesh.height = 95.0
+		mesh.radial_segments = 8
+		ray.mesh = mesh
+		ray.material_override = mat
+		ray.position = Vector3(rng.randf_range(-110.0, 110.0), -36.0, rng.randf_range(-110.0, 110.0))
+		ray.rotation_degrees = Vector3(7.0, float(i) * 18.0, -5.0)
+		ray.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(ray)
 
 
 class PlusOne extends Node3D:

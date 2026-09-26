@@ -59,7 +59,7 @@ func _physics_process(delta: float) -> void:
 			desired = offset.normalized() * (cruise_speed + player.scare_power() * urgency)
 	velocity = velocity.move_toward(desired, 8.0 * delta)
 	global_position += velocity * delta
-	global_position = Bounds.clamp_pos(global_position, 1.6)
+	global_position = Bounds.clamp_pos(global_position, 2.8)
 	_face()
 	_wag(delta)
 
