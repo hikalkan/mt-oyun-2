@@ -128,6 +128,12 @@ func _on_ate(at: Vector3, seat: Seat) -> void:
 	seat.hunger = minf(_hunger_full, seat.hunger + _bite_fill)
 	seat.who.heal(8.0)
 	seat.score += 1
+	if seat.who.has_method("grow_from_food"):
+		var allow := true
+		if seat.who.has_method("wants_parent_grow"):
+			allow = seat.who.wants_parent_grow()
+		if allow:
+			seat.who.grow_from_food(false)
 	_paint_hunger(seat)
 	_paint_health(seat)
 	_refresh_score(seat)
@@ -139,6 +145,30 @@ func _on_ate(at: Vector3, seat: Seat) -> void:
 	seat.score_label.scale = Vector2(1.12, 1.12)
 	seat.score_tween = create_tween()
 	seat.score_tween.tween_property(seat.score_label, "scale", Vector2.ONE, 0.16)
+	if _total_score() >= _goal:
+		_win()
+
+
+func _on_ate_titan(at: Vector3, seat: Seat) -> void:
+	if _finished or seat.dead:
+		return
+	seat.hunger = _hunger_full
+	seat.who.heal(34.0)
+	seat.score += 4
+	if seat.who.has_method("grow_from_food"):
+		seat.who.grow_from_food(true)
+	_paint_hunger(seat)
+	_paint_health(seat)
+	_refresh_score(seat)
+	var pop := PlusOne.new()
+	pop.note = "+4"
+	pop.position = at + Vector3(0, 1.4, 0)
+	add_child(pop)
+	if seat.score_tween:
+		seat.score_tween.kill()
+	seat.score_label.scale = Vector2(1.2, 1.2)
+	seat.score_tween = create_tween()
+	seat.score_tween.tween_property(seat.score_label, "scale", Vector2.ONE, 0.2)
 	if _total_score() >= _goal:
 		_win()
 
@@ -449,13 +479,15 @@ func _spawn_titans(count: int) -> void:
 
 func _land_hint(pad: bool) -> String:
 	if pad:
-		return "Kumanda    Sol çubuk: koş    Sağ çubuk: bak\nA: zıpla    Y: kamera    LB: kükre    X: bebek\nSen yiyince bebek de yer. Nehirden su iç. Dev dinozor yakına gelince ısırır."
-	return "W A S D veya oklar: koş    Fare: bak    Boşluk: zıpla\nP: kamera    K: kükre    B: bebek    Esc: fareyi bırak\nSen yiyince bebek de yer. Nehirden su iç. Dev dinozor yakına gelince ısırır."
+		return "Kumanda    Sol çubuk: koş    Sağ çubuk: bak\nA: zıpla    Y: kamera    LB: kükre    X: yumurta\nX ile yumurta koy, en fazla 10. Bebek çatlayıp çıkar, yiyince büyür.\n6 hayvan yiyince dev dinozoru sen yersin."
+	return "W A S D veya oklar: koş    Fare: bak    Boşluk: zıpla\nP: kamera    K: kükre    B: yumurta    Esc: fareyi bırak\nB ile yumurta koy, en fazla 10. Bebek çatlayıp çıkar, yiyince büyür.\n6 hayvan yiyince dev dinozoru sen yersin."
 
 
 func _bind_seat(seat: Seat) -> void:
 	var who = seat.who
 	who.ate_fish.connect(_on_ate.bind(seat))
+	if who.has_signal("ate_titan"):
+		who.ate_titan.connect(_on_ate_titan.bind(seat))
 	who.form_changed.connect(_on_form.bind(seat))
 	who.camera_changed.connect(_on_camera.bind(seat))
 	who.got_hurt.connect(_on_hurt.bind(seat))
@@ -470,6 +502,8 @@ func _unbind_seat(seat: Seat) -> void:
 		return
 	if who.ate_fish.is_connected(_on_ate.bind(seat)):
 		who.ate_fish.disconnect(_on_ate.bind(seat))
+	if who.has_signal("ate_titan") and who.ate_titan.is_connected(_on_ate_titan.bind(seat)):
+		who.ate_titan.disconnect(_on_ate_titan.bind(seat))
 	if who.form_changed.is_connected(_on_form.bind(seat)):
 		who.form_changed.disconnect(_on_form.bind(seat))
 	if who.camera_changed.is_connected(_on_camera.bind(seat)):
@@ -1014,7 +1048,7 @@ func _refresh_menu() -> void:
 	if info:
 		if _mode_key == "kara":
 			var land: Dictionary = LAND_LEVELS[_diff_key]
-			info.text = "%d hayvan ye. Tokluk %d saniye sürer.\nNehirden su içebilirsin. Dev dinozor yalnız yakına gelince ısırır." % [int(land.goal), int(land.hunger)]
+			info.text = "%d hayvan ye. Tokluk %d saniye sürer.\nYedikçe büyürsün. 6 hayvan yiyince dev dinozoru da yiyebilirsin." % [int(land.goal), int(land.hunger)]
 		else:
 			var level: Dictionary = LEVELS[_diff_key]
 			info.text = "%d balık ye. Tokluk %d saniye sürer.\nKöpekbalığı, köpek ve kötü balık saldırır. Olta tutarsa ölürsün." % [int(level.goal), int(level.hunger)]
@@ -1199,10 +1233,11 @@ class Seat extends RefCounted:
 
 class PlusOne extends Node3D:
 	var life := 0.8
+	var note := "+1"
 
 	func _ready() -> void:
 		var label := Label3D.new()
-		label.text = "+1"
+		label.text = note
 		label.font_size = 72
 		label.pixel_size = 0.012
 		label.outline_size = 12

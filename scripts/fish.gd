@@ -1,6 +1,7 @@
 extends Area3D
 
 const Bounds := preload("res://scripts/sea_bounds.gd")
+const Blood := preload("res://scripts/blood.gd")
 const COLORS: Array[Color] = [
 	Color(1.0, 0.52, 0.16),
 	Color(0.98, 0.78, 0.18),
@@ -70,6 +71,7 @@ func got_eaten() -> bool:
 		return false
 	_eating = true
 	set_deferred("monitorable", false)
+	Blood.spill(get_parent(), global_position, 0.75)
 	var tw := create_tween()
 	tw.tween_property(self, "scale", base_scale * 0.05, 0.16)
 	tw.tween_callback(_respawn)

@@ -2,6 +2,7 @@ extends Area3D
 
 const Land := preload("res://scripts/land_bounds.gd")
 const SkinShader := preload("res://assets/shaders/skin.gdshader")
+const Blood := preload("res://scripts/blood.gd")
 const AGGRO_DIST := 11.0
 const LEASH_DIST := 15.0
 const BITE_REACH := 4.0
@@ -18,7 +19,9 @@ var _bite_wait := 0.5
 var _tail: Node3D
 var _legs: Array[Node3D] = []
 var _voice: AudioStreamPlayer3D
-var _snarl: AudioStreamWAV
+var _snarl: AudioStream = preload("res://assets/audio/titan_roar.ogg")
+var _eaten := false
+var _scared := false
 
 
 func _ready() -> void:
@@ -30,10 +33,10 @@ func _ready() -> void:
 	_wander = _new_wander()
 	_build()
 	var shape := SphereShape3D.new()
-	shape.radius = 3.2
+	shape.radius = 5.8
 	var col := CollisionShape3D.new()
 	col.shape = shape
-	col.position = Vector3(0.0, 3.2, -1.0)
+	col.position = Vector3(0.0, 3.0, 0.5)
 	add_child(col)
 	global_position = Land.stand(global_position, 10.0)
 	_voice = AudioStreamPlayer3D.new()
@@ -41,10 +44,11 @@ func _ready() -> void:
 	_voice.max_distance = 80.0
 	_voice.volume_db = 1.0
 	add_child(_voice)
-	_snarl = _make_snarl()
 
 
 func _physics_process(delta: float) -> void:
+	if _eaten:
+		return
 	if _bite_wait > 0.0:
 		_bite_wait -= delta
 	if _wander_wait > 0.0:
@@ -56,28 +60,46 @@ func _physics_process(delta: float) -> void:
 		var offset: Vector3 = hunter.global_position - global_position
 		offset.y = 0.0
 		var dist := offset.length()
-		if _chasing and dist > LEASH_DIST:
+		var scary := false
+		if hunter.has_method("can_eat_big"):
+			scary = bool(hunter.call("can_eat_big"))
+		if scary:
 			_chasing = false
-		elif not _chasing and dist < AGGRO_DIST and dist > 0.5:
-			_chasing = true
-			_voice.stream = _snarl
-			_voice.pitch_scale = randf_range(0.94, 1.05)
-			_voice.play()
-		if _chasing and offset.length_squared() > 0.04:
-			chasing_now = true
-			desired = offset.normalized() * LUNGE_SPEED
-			var mouth := global_position + (-global_transform.basis.z) * MOUTH_FORWARD
-			mouth.y = hunter.global_position.y
-			if mouth.distance_to(hunter.global_position) < BITE_REACH and _bite_wait <= 0.0:
-				if hunter.hurt(bite_damage, global_position):
-					_bite_wait = 1.35
-	if not chasing_now:
+			if dist < 26.0 and dist > 0.2:
+				if not _scared:
+					_scared = true
+					_voice.stream = _snarl
+					_voice.pitch_scale = randf_range(1.18, 1.32)
+					_voice.volume_db = 0.0
+					_voice.play()
+				desired = -offset.normalized() * 13.0
+			else:
+				_scared = false
+		else:
+			_scared = false
+			if _chasing and dist > LEASH_DIST:
+				_chasing = false
+			elif not _chasing and dist < AGGRO_DIST and dist > 0.5:
+				_chasing = true
+				_voice.stream = _snarl
+				_voice.pitch_scale = randf_range(0.8, 0.9)
+				_voice.volume_db = 4.0
+				_voice.play()
+			if _chasing and offset.length_squared() > 0.04:
+				chasing_now = true
+				desired = offset.normalized() * LUNGE_SPEED
+				var mouth := global_position + (-global_transform.basis.z) * MOUTH_FORWARD
+				mouth.y = hunter.global_position.y
+				if mouth.distance_to(hunter.global_position) < BITE_REACH and _bite_wait <= 0.0:
+					if hunter.hurt(bite_damage, global_position):
+						_bite_wait = 1.35
+	if not chasing_now and not _scared:
 		_chasing = false
 		if _wander_wait <= 0.0:
 			_wander = _new_wander()
 			_wander_wait = randf_range(2.4, 4.8)
 		desired = _wander * WANDER_SPEED
-	_vel = _vel.move_toward(desired, (7.0 if chasing_now else 3.0) * delta)
+	_vel = _vel.move_toward(desired, (10.0 if _scared else (7.0 if chasing_now else 3.0)) * delta)
 	var pos := global_position + Vector3(_vel.x, 0.0, _vel.z) * delta
 	var before := pos
 	pos = Land.clamp_xz(pos, 12.0)
@@ -129,34 +151,18 @@ func _new_wander() -> Vector3:
 	return Vector3(randf_range(-1.0, 1.0), 0.0, randf_range(-1.0, 1.0)).normalized()
 
 
-func _make_snarl() -> AudioStreamWAV:
-	var rate := 22050
-	var seconds := 0.38
-	var count := int(rate * seconds)
-	var data := PackedByteArray()
-	data.resize(count * 2)
-	var phase := 0.0
-	var noise := 445566
-	for i in count:
-		var t := float(i) / float(rate)
-		var env := 1.0
-		if t < 0.03:
-			env = t / 0.03
-		elif t > seconds - 0.1:
-			env = clampf((seconds - t) / 0.1, 0.0, 1.0)
-		var freq := lerpf(70.0, 40.0, t / seconds)
-		phase += TAU * freq / float(rate)
-		noise = (noise * 1103515245 + 12345) & 0x7fffffff
-		var grit := float(noise % 20001) / 10000.0 - 1.0
-		var sample := sin(phase) * 0.5 + grit * 0.35 * absf(sin(phase * 1.7))
-		sample = clampf(sample * env, -1.0, 1.0)
-		data.encode_s16(i * 2, int(sample * 28000.0))
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = rate
-	wav.stereo = false
-	wav.data = data
-	return wav
+func got_eaten() -> bool:
+	if _eaten:
+		return false
+	_eaten = true
+	_scared = false
+	set_deferred("monitorable", false)
+	set_physics_process(false)
+	Blood.spill(get_parent(), global_position + Vector3(0.0, 3.2, 0.0), 2.2)
+	var tw := create_tween()
+	tw.tween_property(self, "scale", Vector3(0.04, 0.04, 0.04), 0.28)
+	tw.tween_callback(queue_free)
+	return true
 
 
 func _build() -> void:

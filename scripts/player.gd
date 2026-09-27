@@ -42,8 +42,18 @@ var _shark_hood: MeshInstance3D
 var _chase: Camera3D
 var _fps: Camera3D
 var _voice: AudioStreamPlayer3D
-var _whale_call: AudioStreamWAV
-var _shark_call: AudioStreamWAV
+var _whale_calls: Array[AudioStream] = [
+	preload("res://assets/audio/whale.ogg"),
+	preload("res://assets/audio/whale2.ogg"),
+]
+var _shark_calls: Array[AudioStream] = [
+	preload("res://assets/audio/shark.ogg"),
+	preload("res://assets/audio/shark2.ogg"),
+]
+var _bites: Array[AudioStream] = [
+	preload("res://assets/audio/gulp.ogg"),
+	preload("res://assets/audio/gulp2.ogg"),
+]
 
 
 func _ready() -> void:
@@ -64,8 +74,6 @@ func _ready() -> void:
 	_voice.max_distance = 120.0
 	_voice.volume_db = 2.0
 	add_child(_voice)
-	_whale_call = _make_call(true)
-	_shark_call = _make_call(false)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -255,47 +263,15 @@ func _q_held() -> bool:
 
 
 func _speak() -> void:
-	_voice.stream = _whale_call if form == Form.WHALE else _shark_call
-	_voice.pitch_scale = randf_range(0.94, 1.06)
+	if form == Form.WHALE:
+		_voice.stream = _whale_calls[randi() % _whale_calls.size()]
+		_voice.pitch_scale = randf_range(0.97, 1.03)
+		_voice.volume_db = 4.0
+	else:
+		_voice.stream = _shark_calls[randi() % _shark_calls.size()]
+		_voice.pitch_scale = randf_range(0.94, 1.06)
+		_voice.volume_db = 2.0
 	_voice.play()
-
-
-func _make_call(whale: bool) -> AudioStreamWAV:
-	var rate := 22050
-	var seconds := 1.4 if whale else 0.48
-	var count := int(rate * seconds)
-	var data := PackedByteArray()
-	data.resize(count * 2)
-	var phase := 0.0
-	var noise := 246813
-	for i in count:
-		var t := float(i) / float(rate)
-		var attack := 0.09 if whale else 0.02
-		var release := 0.4 if whale else 0.1
-		var env := 1.0
-		if t < attack:
-			env = t / attack
-		elif t > seconds - release:
-			env = clampf((seconds - t) / release, 0.0, 1.0)
-		var sample := 0.0
-		if whale:
-			var freq := lerpf(155.0, 62.0, t / seconds) + sin(t * 13.0) * 7.0
-			phase += TAU * freq / float(rate)
-			sample = sin(phase) * 0.7 + sin(phase * 2.0) * 0.16 + sin(phase * 0.5) * 0.14
-		else:
-			var freq := lerpf(240.0, 85.0, t / seconds)
-			phase += TAU * freq / float(rate)
-			noise = (noise * 1103515245 + 12345) & 0x7fffffff
-			var grit := float(noise % 20001) / 10000.0 - 1.0
-			sample = sin(phase) * 0.45 + sin(phase * 2.4) * 0.22 + grit * 0.32 * absf(sin(phase))
-		sample = clampf(sample * env, -1.0, 1.0)
-		data.encode_s16(i * 2, int(sample * 30000.0))
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = rate
-	wav.stereo = false
-	wav.data = data
-	return wav
 
 
 func _switch_form() -> void:
@@ -397,6 +373,10 @@ func _on_mouth_area(area: Area3D) -> void:
 	if not area.is_in_group("fish"):
 		return
 	if area.call("got_eaten") == true:
+		_voice.stream = _bites[randi() % _bites.size()]
+		_voice.pitch_scale = randf_range(0.9, 1.08)
+		_voice.volume_db = -2.0
+		_voice.play()
 		ate_fish.emit(area.global_position)
 
 

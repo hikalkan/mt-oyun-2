@@ -4,6 +4,7 @@ enum Kind { TINY, DUCK, HORN }
 
 const Land := preload("res://scripts/land_bounds.gd")
 const SkinShader := preload("res://assets/shaders/skin.gdshader")
+const Blood := preload("res://scripts/blood.gd")
 
 var kind := Kind.TINY
 var cruise_speed := 3.4
@@ -98,6 +99,7 @@ func got_eaten() -> bool:
 		return false
 	_eating = true
 	set_deferred("monitorable", false)
+	Blood.spill(get_parent(), global_position + Vector3(0.0, 0.55, 0.0), 1.0)
 	var tw := create_tween()
 	tw.tween_property(_bob, "scale", Vector3(0.05, 0.05, 0.05), 0.16)
 	tw.tween_callback(_respawn)

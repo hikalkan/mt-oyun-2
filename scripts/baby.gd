@@ -4,56 +4,127 @@ const Land := preload("res://scripts/land_bounds.gd")
 const SkinShader := preload("res://assets/shaders/skin.gdshader")
 
 var parent = null
+var slot := 0
 var _biting := 0.0
 var _bite_at := Vector3.ZERO
 var _time := 0.0
+var _hunt_wait := 0.4
 var _jaw: Node3D
 var _tail: Node3D
 var _legs: Array[Node3D] = []
+var _size := 0.4
+var _grow_tween: Tween
+var _hatched := false
+var _egg: Node3D
 
 
-func setup(who) -> void:
+func setup(who, index: int) -> void:
 	parent = who
+	slot = index
+	_hunt_wait = 0.35 + float(index) * 0.18
 
 
 func _ready() -> void:
 	_build()
-	scale = Vector3(0.08, 0.08, 0.08)
-	var tw := create_tween()
-	tw.tween_property(self, "scale", Vector3(0.46, 0.46, 0.46), 0.35)
+	scale = Vector3(0.04, 0.04, 0.04)
+	_egg = _build_egg()
+	_egg.global_position = global_position
+	get_parent().add_child(_egg)
+	_rock_egg()
 
 
-func eat_with(at: Vector3) -> void:
-	var snack = _nearest_prey(4.8)
-	if snack != null and snack.call("got_eaten") == true:
-		_bite_at = snack.global_position
-		_biting = 0.6
-		if parent != null and is_instance_valid(parent):
-			parent.ate_fish.emit(snack.global_position)
+func _exit_tree() -> void:
+	if is_instance_valid(_egg):
+		_egg.queue_free()
+
+
+func _rock_egg() -> void:
+	if not is_instance_valid(_egg):
 		return
-	_bite_at = at
-	_biting = 0.55
+	_egg.scale = Vector3(0.2, 0.2, 0.2)
+	var tw := create_tween()
+	tw.tween_property(_egg, "scale", Vector3.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	for i in 3:
+		tw.tween_property(_egg, "rotation:z", 0.28, 0.08)
+		tw.tween_property(_egg, "rotation:z", -0.28, 0.08)
+	tw.tween_property(_egg, "rotation:z", 0.0, 0.06)
+	tw.tween_callback(_crack_egg)
+
+
+func _crack_egg() -> void:
+	if not is_inside_tree():
+		return
+	if is_instance_valid(_egg):
+		var top := _egg.get_node_or_null("Top") as Node3D
+		if top:
+			var crack := create_tween()
+			crack.tween_property(top, "position", top.position + Vector3(0.62, 0.55, 0.15), 0.2)
+			crack.parallel().tween_property(top, "rotation:z", 1.6, 0.2)
+	var grow := create_tween()
+	grow.tween_property(self, "scale", Vector3.ONE * _size, 0.26).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	grow.tween_callback(_finish_hatch)
+
+
+func _finish_hatch() -> void:
+	if not is_inside_tree():
+		return
+	_hatched = true
+	if parent != null and is_instance_valid(parent) and parent.has_method("chirp"):
+		parent.chirp(slot)
+	if is_instance_valid(_egg):
+		var fade := create_tween()
+		fade.tween_property(_egg, "scale", Vector3(0.04, 0.04, 0.04), 0.28)
+		fade.tween_callback(_free_egg)
+
+
+func _free_egg() -> void:
+	if is_instance_valid(_egg):
+		_egg.queue_free()
+		_egg = null
+
+
+func grow_from_meal() -> void:
+	_size = minf(_size + 0.13, 1.45)
+	if _grow_tween:
+		_grow_tween.kill()
+	_grow_tween = create_tween()
+	_grow_tween.tween_property(self, "scale", Vector3.ONE * _size, 0.22)
+
+
+func eat_with(_at: Vector3) -> void:
+	_try_eat()
 
 
 func _physics_process(delta: float) -> void:
 	if parent == null or not is_instance_valid(parent) or not parent.alive:
 		queue_free()
 		return
+	if not _hatched:
+		return
 	_time += delta
+	if _hunt_wait > 0.0:
+		_hunt_wait -= delta
 	if _biting > 0.0:
 		_biting -= delta
+	elif _hunt_wait <= 0.0:
+		_try_eat()
 	var back: Vector3 = parent.global_transform.basis.z
 	var side: Vector3 = parent.global_transform.basis.x
-	var goal: Vector3 = parent.global_position + back * 3.1 + side * 1.8
-	var speed := 12.5
+	var size := 1.0
+	if parent.has_method("body_size"):
+		size = parent.body_size()
+	var col := slot % 5
+	var row := int(slot / 5)
+	var goal: Vector3 = parent.global_position + back * (3.6 + float(row) * 2.3) * size + side * (float(col) - 2.0) * 1.7 * size
+	var speed := 14.0 * size
 	if _biting > 0.0:
 		goal = _bite_at
-		speed = 18.0
+		speed = 17.0 + _size * 6.0
 	var pos := global_position
 	var flat := Vector3(goal.x - pos.x, 0.0, goal.z - pos.z)
 	var dist := flat.length()
-	if dist > 7.0 and _biting <= 0.0:
-		speed = 18.0
+	if dist > 8.0 and _biting <= 0.0:
+		speed = 18.0 * size
 	if dist > 0.15:
 		var step := flat.limit_length(speed * delta)
 		pos.x += step.x
@@ -74,6 +145,20 @@ func _physics_process(delta: float) -> void:
 		_jaw.rotation.x = lerpf(_jaw.rotation.x, -open, 0.25)
 
 
+func _try_eat() -> void:
+	if _hunt_wait > 0.0:
+		return
+	var snack = _nearest_prey(6.0 + _size * 2.4)
+	if snack == null or snack.call("got_eaten") != true:
+		return
+	_bite_at = snack.global_position
+	_biting = 0.55
+	_hunt_wait = 1.35
+	grow_from_meal()
+	if parent != null and is_instance_valid(parent) and parent.has_method("baby_scored"):
+		parent.baby_scored(snack.global_position)
+
+
 func _nearest_prey(reach: float):
 	var best = null
 	var best_d := reach * reach
@@ -85,6 +170,53 @@ func _nearest_prey(reach: float):
 			best_d = dist
 			best = node
 	return best
+
+
+func _build_egg() -> Node3D:
+	var egg := Node3D.new()
+	var shell := _plain(Color(0.95, 0.9, 0.74))
+	var spot := _plain(Color(0.62, 0.42, 0.24))
+	var bottom := Node3D.new()
+	bottom.name = "Bottom"
+	bottom.position = Vector3(0.0, 0.46, 0.0)
+	egg.add_child(bottom)
+	_egg_half(bottom, 0.58, Vector3(1.05, 0.72, 1.05), shell)
+	_egg_spot(bottom, Vector3(0.28, 0.05, 0.22), spot)
+	_egg_spot(bottom, Vector3(-0.22, -0.02, 0.18), spot)
+	var top := Node3D.new()
+	top.name = "Top"
+	top.position = Vector3(0.0, 0.92, 0.0)
+	egg.add_child(top)
+	_egg_half(top, 0.5, Vector3(0.92, 0.78, 0.92), shell)
+	_egg_spot(top, Vector3(0.12, 0.12, 0.28), spot)
+	_egg_spot(top, Vector3(-0.2, 0.08, -0.12), spot)
+	_egg_spot(top, Vector3(0.05, 0.22, -0.2), spot)
+	return egg
+
+
+func _egg_half(host: Node3D, radius: float, scl: Vector3, mat: Material) -> void:
+	var mesh := SphereMesh.new()
+	mesh.radius = radius
+	mesh.height = radius * 2.0
+	mesh.radial_segments = 16
+	mesh.rings = 8
+	var n := MeshInstance3D.new()
+	n.mesh = mesh
+	n.scale = scl
+	n.material_override = mat
+	host.add_child(n)
+
+
+func _egg_spot(host: Node3D, pos: Vector3, mat: Material) -> void:
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.09
+	mesh.height = 0.18
+	var n := MeshInstance3D.new()
+	n.mesh = mesh
+	n.position = pos
+	n.scale = Vector3(1.1, 0.7, 1.0)
+	n.material_override = mat
+	host.add_child(n)
 
 
 func _build() -> void:

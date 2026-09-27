@@ -2,6 +2,7 @@ extends CharacterBody3D
 
 signal form_changed(form_label: String)
 signal ate_fish(at: Vector3)
+signal ate_titan(at: Vector3)
 signal camera_changed(mode_label: String)
 signal got_hurt(left: float)
 signal got_downed
@@ -42,9 +43,20 @@ var _chase: Camera3D
 var _fps: Camera3D
 var _hood: MeshInstance3D
 var _voice: AudioStreamPlayer3D
-var _roar_call: AudioStreamWAV
-var _gulp: AudioStreamWAV
-var _baby = null
+var _roar_call: AudioStream = preload("res://assets/audio/rex_roar.ogg")
+var _gulps: Array[AudioStream] = [
+	preload("res://assets/audio/gulp.ogg"),
+	preload("res://assets/audio/gulp2.ogg"),
+]
+var _baby_call: AudioStream = preload("res://assets/audio/baby.ogg")
+var _babies: Array = []
+var _from_baby := false
+const BABY_MAX := 10
+var _avatar: Node3D
+var _grown := 1.0
+var _meals := 0
+var _grow_tween: Tween
+const MEALS_TO_HUNT := 6
 
 
 func _ready() -> void:
@@ -52,6 +64,8 @@ func _ready() -> void:
 	collision_layer = 0
 	collision_mask = 0
 	motion_mode = MOTION_MODE_FLOATING
+	_avatar = Node3D.new()
+	add_child(_avatar)
 	_build_body()
 	_build_cameras()
 	_build_mouth()
@@ -61,8 +75,6 @@ func _ready() -> void:
 	_voice.max_distance = 140.0
 	_voice.volume_db = 3.0
 	add_child(_voice)
-	_roar_call = _make_roar()
-	_gulp = _make_gulp()
 	rotation.y = yaw
 	form_changed.emit(form_name())
 
@@ -136,9 +148,10 @@ func die() -> void:
 	alive = false
 	velocity = Vector3.ZERO
 	_vy = 0.0
-	if _baby != null and is_instance_valid(_baby):
-		_baby.queue_free()
-		_baby = null
+	for baby in _babies:
+		if is_instance_valid(baby):
+			baby.queue_free()
+	_babies.clear()
 
 
 func set_owns_screen(owns: bool) -> void:
@@ -157,9 +170,13 @@ func view_camera() -> Camera3D:
 
 
 func form_name() -> String:
-	if _baby != null and is_instance_valid(_baby):
-		return "T-Rex ve bebek"
-	return "T-Rex"
+	var name := "Kocaman T-Rex" if can_eat_big() else "T-Rex"
+	var babies := _live_babies()
+	if babies.size() == 1:
+		return name + " ve bebek"
+	if babies.size() > 1:
+		return name + " ve %d bebek" % babies.size()
+	return name
 
 
 func camera_name() -> String:
@@ -173,11 +190,32 @@ func is_shark() -> bool:
 
 
 func scare_radius() -> float:
-	return 16.0
+	return 16.0 * _grown
 
 
 func scare_power() -> float:
-	return 3.2
+	return 3.2 * _grown
+
+
+func body_size() -> float:
+	return _grown
+
+
+func can_eat_big() -> bool:
+	return _meals >= MEALS_TO_HUNT
+
+
+func grow_from_food(big: bool = false) -> void:
+	var was_big := can_eat_big()
+	_meals += 4 if big else 1
+	_grown = minf(1.0 + float(_meals) * 0.1, 2.1)
+	run_speed = 16.0 + (_grown - 1.0) * 4.0
+	if _grow_tween:
+		_grow_tween.kill()
+	_grow_tween = create_tween()
+	_grow_tween.tween_property(_avatar, "scale", Vector3.ONE * _grown, 0.25)
+	if can_eat_big() and not was_big:
+		form_changed.emit(form_name())
 
 
 func _physics_process(delta: float) -> void:
@@ -208,7 +246,7 @@ func _physics_process(delta: float) -> void:
 		horiz = horiz.move_toward(Vector3.ZERO, drag * delta)
 	var jumping := _jump_edge()
 	if _grounded and jumping:
-		_vy = 10.5
+		_vy = 10.5 + (_grown - 1.0) * 3.0
 		_grounded = false
 	else:
 		_vy -= 24.0 * delta
@@ -234,12 +272,10 @@ func _physics_process(delta: float) -> void:
 		_gulp_wait -= delta
 		if _gulp_wait <= 0.0:
 			_gulp_wait = 0.9
-			_voice.stream = _gulp
-			_voice.pitch_scale = randf_range(0.92, 1.08)
-			_voice.volume_db = -6.0
-			_voice.play()
+			_play(_gulps[randi() % _gulps.size()], randf_range(0.78, 0.94), -6.0)
 	_seat_cameras()
 	_animate()
+	_bite_overlapped_titans()
 
 
 func _wish_dir() -> Vector3:
@@ -288,91 +324,60 @@ func _joy_axis(axis: JoyAxis) -> float:
 	return value
 
 
+func _live_babies() -> Array:
+	var live: Array = []
+	for baby in _babies:
+		if is_instance_valid(baby):
+			live.append(baby)
+	_babies = live
+	return _babies
+
+
+func wants_parent_grow() -> bool:
+	return not _from_baby
+
+
+func baby_scored(at: Vector3) -> void:
+	_from_baby = true
+	ate_fish.emit(at)
+	_from_baby = false
+
+
 func _give_birth() -> void:
 	if not alive:
 		return
-	if _baby != null and is_instance_valid(_baby):
+	var babies := _live_babies()
+	if babies.size() >= BABY_MAX:
 		return
+	var slot := babies.size()
 	var baby = BabyScript.new()
 	var back: Vector3 = global_transform.basis.z
 	var side: Vector3 = global_transform.basis.x
-	baby.position = Land.stand(global_position + back * 2.3 + side * 1.7)
-	baby.setup(self)
+	var col := slot % 5
+	var row := int(slot / 5)
+	baby.position = Land.stand(global_position + back * (2.6 + float(row) * 1.8) + side * (float(col) - 2.0) * 1.5)
+	baby.setup(self, slot)
 	get_parent().add_child(baby)
-	_baby = baby
+	_babies.append(baby)
 	form_changed.emit(form_name())
-	_voice.stream = _gulp
-	_voice.pitch_scale = 1.55
-	_voice.volume_db = -1.0
-	_voice.play()
+	_play(_baby_call, randf_range(0.62, 0.74), -5.0)
+
+
+func chirp(index: int) -> void:
+	_play(_baby_call, randf_range(1.18, 1.36) + float(index) * 0.02, -1.0)
 
 
 func _roar_now() -> void:
-	_roar = 0.55
-	_voice.stream = _roar_call
-	_voice.pitch_scale = randf_range(0.92, 1.06)
-	_voice.volume_db = 3.0
+	_roar = 2.15
+	var deep := lerpf(1.0, 0.78, clampf((_grown - 1.0) / 1.1, 0.0, 1.0))
+	_play(_roar_call, randf_range(0.96, 1.05) * deep, 3.0)
+
+
+func _play(stream: AudioStream, pitch: float, db: float) -> void:
+	_voice.stream = stream
+	_voice.pitch_scale = pitch
+	_voice.volume_db = db
 	_voice.play()
-
-
-func _make_roar() -> AudioStreamWAV:
-	var rate := 22050
-	var seconds := 0.72
-	var count := int(rate * seconds)
-	var data := PackedByteArray()
-	data.resize(count * 2)
-	var phase := 0.0
-	var noise := 918273
-	for i in count:
-		var t := float(i) / float(rate)
-		var env := 1.0
-		if t < 0.04:
-			env = t / 0.04
-		elif t > seconds - 0.22:
-			env = clampf((seconds - t) / 0.22, 0.0, 1.0)
-		var freq := lerpf(92.0, 48.0, t / seconds) + sin(t * 28.0) * 6.0
-		phase += TAU * freq / float(rate)
-		noise = (noise * 1103515245 + 12345) & 0x7fffffff
-		var grit := float(noise % 20001) / 10000.0 - 1.0
-		var sample := sin(phase) * 0.55 + sin(phase * 0.5) * 0.22 + grit * 0.28 * absf(sin(phase))
-		sample = clampf(sample * env, -1.0, 1.0)
-		data.encode_s16(i * 2, int(sample * 30000.0))
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = rate
-	wav.stereo = false
-	wav.data = data
-	return wav
-
-
-func _make_gulp() -> AudioStreamWAV:
-	var rate := 22050
-	var seconds := 0.18
-	var count := int(rate * seconds)
-	var data := PackedByteArray()
-	data.resize(count * 2)
-	var phase := 0.0
-	var noise := 135790
-	for i in count:
-		var t := float(i) / float(rate)
-		var env := 1.0
-		if t < 0.02:
-			env = t / 0.02
-		elif t > seconds - 0.06:
-			env = clampf((seconds - t) / 0.06, 0.0, 1.0)
-		var freq := lerpf(180.0, 90.0, t / seconds)
-		phase += TAU * freq / float(rate)
-		noise = (noise * 1103515245 + 12345) & 0x7fffffff
-		var grit := float(noise % 20001) / 10000.0 - 1.0
-		var sample := sin(phase) * 0.25 + grit * 0.55 * env
-		sample = clampf(sample * env, -1.0, 1.0)
-		data.encode_s16(i * 2, int(sample * 22000.0))
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = rate
-	wav.stereo = false
-	wav.data = data
-	return wav
 
 
 func _toggle_camera() -> void:
@@ -388,12 +393,16 @@ func _show_camera() -> void:
 
 
 func _seat_cameras() -> void:
-	_chase.position = Vector3(0.0, 4.8, 11.0)
+	_chase.position = Vector3(0.0, 4.8, 11.0) * _grown
+	if _head:
+		_head.position = Vector3(0.0, 2.45, -1.7) * _grown
+	if _hood:
+		_hood.scale = Vector3(0.7, 0.28, 1.15) * _grown
 	var lifted := Land.above_ground(_chase.global_position, 1.5)
 	if lifted.y > _chase.global_position.y:
 		_chase.global_position = lifted
 	var ahead := -global_transform.basis.z
-	var focus := global_position + Vector3(0.0, 2.3, 0.0) + ahead * 3.2
+	var focus := global_position + Vector3(0.0, 2.3 * _grown, 0.0) + ahead * 3.2 * _grown
 	focus.y += sin(pitch) * 7.0
 	if _chase.global_position.distance_to(focus) > 0.4:
 		_chase.look_at(focus, Vector3.UP)
@@ -419,17 +428,39 @@ func _animate() -> void:
 		_head.rotation.x = lerpf(_head.rotation.x, 0.62, 0.18)
 
 
+func _bite_overlapped_titans() -> void:
+	if not can_eat_big() or _mouth == null:
+		return
+	for area in _mouth.get_overlapping_areas():
+		if not is_instance_valid(area) or not area.is_in_group("titan"):
+			continue
+		if area.call("got_eaten") == true:
+			_play(_gulps[randi() % _gulps.size()], randf_range(0.62, 0.74), 1.0)
+			ate_titan.emit(area.global_position)
+
+
 func _on_mouth_area(area: Area3D) -> void:
-	if not alive or not area.is_in_group("prey"):
+	if not alive:
+		return
+	if area.is_in_group("titan"):
+		if not can_eat_big():
+			return
+		if area.call("got_eaten") == true:
+			_play(_gulps[randi() % _gulps.size()], randf_range(0.62, 0.74), 1.0)
+			ate_titan.emit(area.global_position)
+		return
+	if not area.is_in_group("prey"):
 		return
 	var rel := to_local(area.global_position)
 	if rel.z > -0.6:
 		return
 	if area.call("got_eaten") == true:
 		var at: Vector3 = area.global_position
+		if _roar <= 0.0:
+			_play(_gulps[randi() % _gulps.size()], randf_range(0.82, 1.0), -3.0)
 		ate_fish.emit(at)
-		if _baby != null and is_instance_valid(_baby):
-			_baby.eat_with(at)
+		for baby in _live_babies():
+			baby.eat_with(at)
 
 
 func _build_mouth() -> void:
@@ -442,7 +473,7 @@ func _build_mouth() -> void:
 	col.shape = _mouth_shape
 	_mouth.add_child(col)
 	_mouth.position = Vector3(0.0, 0.95, -2.85)
-	add_child(_mouth)
+	_avatar.add_child(_mouth)
 	_mouth.area_entered.connect(_on_mouth_area)
 
 
@@ -486,26 +517,26 @@ func _build_body() -> void:
 	var dark := _mat(Color(0.2, 0.3, 0.12), 0.62)
 	var belly := _mat(Color(0.66, 0.6, 0.38), 0.5)
 	var tooth := _mat(Color(0.95, 0.93, 0.86), 0.28, true)
-	_body(self, 0.78, Vector3(0.95, 0.82, 1.65), Vector3(0.0, 1.9, 0.2), skin)
-	_body(self, 0.55, Vector3(0.72, 0.42, 1.25), Vector3(0.0, 1.5, 0.25), belly)
-	_place(self, _box(Vector3(0.18, 0.16, 1.5)), Vector3(0.0, 2.45, 0.15), Vector3.ZERO, Vector3.ONE, dark)
+	_body(_avatar, 0.78, Vector3(0.95, 0.82, 1.65), Vector3(0.0, 1.9, 0.2), skin)
+	_body(_avatar, 0.55, Vector3(0.72, 0.42, 1.25), Vector3(0.0, 1.5, 0.25), belly)
+	_place(_avatar, _box(Vector3(0.18, 0.16, 1.5)), Vector3(0.0, 2.45, 0.15), Vector3.ZERO, Vector3.ONE, dark)
 	for i in 6:
 		var scute := CylinderMesh.new()
 		scute.top_radius = 0.0
 		scute.bottom_radius = 0.09
 		scute.height = 0.24
 		scute.radial_segments = 5
-		_place(self, scute, Vector3(0.0, 2.58, -0.5 + float(i) * 0.36), Vector3.ZERO, Vector3.ONE, dark)
-	_body(self, 0.42, Vector3(0.8, 0.85, 1.05), Vector3(0.0, 2.15, -1.05), skin)
-	_body(self, 0.52, Vector3(0.82, 0.7, 1.35), Vector3(0.0, 2.5, -2.15), skin)
-	_body(self, 0.28, Vector3(0.7, 0.55, 1.35), Vector3(0.0, 2.28, -3.05), skin)
-	_eye(self, Vector3(0.28, 2.72, -2.55))
-	_eye(self, Vector3(-0.28, 2.72, -2.55))
+		_place(_avatar, scute, Vector3(0.0, 2.58, -0.5 + float(i) * 0.36), Vector3.ZERO, Vector3.ONE, dark)
+	_body(_avatar, 0.42, Vector3(0.8, 0.85, 1.05), Vector3(0.0, 2.15, -1.05), skin)
+	_body(_avatar, 0.52, Vector3(0.82, 0.7, 1.35), Vector3(0.0, 2.5, -2.15), skin)
+	_body(_avatar, 0.28, Vector3(0.7, 0.55, 1.35), Vector3(0.0, 2.28, -3.05), skin)
+	_eye(_avatar, Vector3(0.28, 2.72, -2.55))
+	_eye(_avatar, Vector3(-0.28, 2.72, -2.55))
 	for i in 4:
-		_place(self, _box(Vector3(0.06, 0.14, 0.06)), Vector3(-0.12 + float(i) * 0.08, 2.08, -3.45), Vector3.ZERO, Vector3.ONE, tooth)
+		_place(_avatar, _box(Vector3(0.06, 0.14, 0.06)), Vector3(-0.12 + float(i) * 0.08, 2.08, -3.45), Vector3.ZERO, Vector3.ONE, tooth)
 	_jaw = Node3D.new()
 	_jaw.position = Vector3(0.0, 2.12, -2.35)
-	add_child(_jaw)
+	_avatar.add_child(_jaw)
 	_body(_jaw, 0.22, Vector3(0.85, 0.45, 1.7), Vector3(0.0, -0.08, -0.85), belly)
 	for i in 4:
 		_place(_jaw, _box(Vector3(0.05, 0.12, 0.05)), Vector3(-0.12 + float(i) * 0.08, 0.02, -1.15), Vector3.ZERO, Vector3.ONE, tooth)
@@ -515,7 +546,7 @@ func _build_body() -> void:
 	_add_leg(-0.48, skin, dark)
 	_tail = Node3D.new()
 	_tail.position = Vector3(0.0, 1.85, 1.35)
-	add_child(_tail)
+	_avatar.add_child(_tail)
 	_body(_tail, 0.42, Vector3(0.7, 0.6, 1.5), Vector3(0.0, 0.05, 0.7), skin)
 	_body(_tail, 0.28, Vector3(0.55, 0.45, 1.35), Vector3(0.0, 0.18, 1.7), dark)
 	_body(_tail, 0.16, Vector3(0.45, 0.35, 1.2), Vector3(0.0, 0.28, 2.45), dark)
@@ -523,14 +554,14 @@ func _build_body() -> void:
 
 func _arm(side: float) -> void:
 	var skin := _mat(Color(0.32, 0.42, 0.18), 0.55)
-	_place(self, _box(Vector3(0.1, 0.28, 0.1)), Vector3(side, 1.85, -0.85), Vector3(0.4, 0.0, side * 0.3), Vector3.ONE, skin)
-	_place(self, _box(Vector3(0.08, 0.16, 0.08)), Vector3(side * 1.05, 1.62, -1.05), Vector3.ZERO, Vector3.ONE, skin)
+	_place(_avatar, _box(Vector3(0.1, 0.28, 0.1)), Vector3(side, 1.85, -0.85), Vector3(0.4, 0.0, side * 0.3), Vector3.ONE, skin)
+	_place(_avatar, _box(Vector3(0.08, 0.16, 0.08)), Vector3(side * 1.05, 1.62, -1.05), Vector3.ZERO, Vector3.ONE, skin)
 
 
 func _add_leg(side: float, skin: Material, dark: Material) -> void:
 	var hip := Node3D.new()
 	hip.position = Vector3(side, 1.45, 0.2)
-	add_child(hip)
+	_avatar.add_child(hip)
 	_legs.append(hip)
 	_place(hip, _box(Vector3(0.32, 0.72, 0.36)), Vector3(0.0, -0.32, 0.0), Vector3.ZERO, Vector3.ONE, skin)
 	_place(hip, _box(Vector3(0.26, 0.62, 0.3)), Vector3(0.0, -0.95, 0.06), Vector3.ZERO, Vector3.ONE, dark)
