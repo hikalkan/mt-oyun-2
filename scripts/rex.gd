@@ -29,6 +29,8 @@ var _vy := 0.0
 var _grounded := true
 var _jump_was := false
 var _roar := 0.0
+var drinking := false
+var _gulp_wait := 0.0
 var _jaw: Node3D
 var _tail: Node3D
 var _legs: Array[Node3D] = []
@@ -40,6 +42,7 @@ var _fps: Camera3D
 var _hood: MeshInstance3D
 var _voice: AudioStreamPlayer3D
 var _roar_call: AudioStreamWAV
+var _gulp: AudioStreamWAV
 
 
 func _ready() -> void:
@@ -57,6 +60,7 @@ func _ready() -> void:
 	_voice.volume_db = 3.0
 	add_child(_voice)
 	_roar_call = _make_roar()
+	_gulp = _make_gulp()
 	rotation.y = yaw
 	form_changed.emit(form_name())
 
@@ -185,8 +189,10 @@ func _physics_process(delta: float) -> void:
 
 	var wish := _wish_dir()
 	var horiz := Vector3(velocity.x, 0.0, velocity.z)
+	drinking = _grounded and Land.in_river(global_position.x, global_position.z)
+	var speed := run_speed * (0.68 if drinking else 1.0)
 	if wish.length_squared() > 0.001:
-		horiz = horiz.move_toward(wish.normalized() * run_speed, accel * delta)
+		horiz = horiz.move_toward(wish.normalized() * speed, accel * delta)
 	else:
 		horiz = horiz.move_toward(Vector3.ZERO, drag * delta)
 	var jumping := _jump_edge()
@@ -212,6 +218,15 @@ func _physics_process(delta: float) -> void:
 	global_position = next
 	velocity.x = horiz.x
 	velocity.z = horiz.z
+	drinking = alive and _grounded and Land.in_river(global_position.x, global_position.z)
+	if drinking and _roar <= 0.0:
+		_gulp_wait -= delta
+		if _gulp_wait <= 0.0:
+			_gulp_wait = 0.9
+			_voice.stream = _gulp
+			_voice.pitch_scale = randf_range(0.92, 1.08)
+			_voice.volume_db = -6.0
+			_voice.play()
 	_seat_cameras()
 	_animate()
 
@@ -266,6 +281,7 @@ func _roar_now() -> void:
 	_roar = 0.55
 	_voice.stream = _roar_call
 	_voice.pitch_scale = randf_range(0.92, 1.06)
+	_voice.volume_db = 3.0
 	_voice.play()
 
 
@@ -291,6 +307,36 @@ func _make_roar() -> AudioStreamWAV:
 		var sample := sin(phase) * 0.55 + sin(phase * 0.5) * 0.22 + grit * 0.28 * absf(sin(phase))
 		sample = clampf(sample * env, -1.0, 1.0)
 		data.encode_s16(i * 2, int(sample * 30000.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = rate
+	wav.stereo = false
+	wav.data = data
+	return wav
+
+
+func _make_gulp() -> AudioStreamWAV:
+	var rate := 22050
+	var seconds := 0.18
+	var count := int(rate * seconds)
+	var data := PackedByteArray()
+	data.resize(count * 2)
+	var phase := 0.0
+	var noise := 135790
+	for i in count:
+		var t := float(i) / float(rate)
+		var env := 1.0
+		if t < 0.02:
+			env = t / 0.02
+		elif t > seconds - 0.06:
+			env = clampf((seconds - t) / 0.06, 0.0, 1.0)
+		var freq := lerpf(180.0, 90.0, t / seconds)
+		phase += TAU * freq / float(rate)
+		noise = (noise * 1103515245 + 12345) & 0x7fffffff
+		var grit := float(noise % 20001) / 10000.0 - 1.0
+		var sample := sin(phase) * 0.25 + grit * 0.55 * env
+		sample = clampf(sample * env, -1.0, 1.0)
+		data.encode_s16(i * 2, int(sample * 22000.0))
 	var wav := AudioStreamWAV.new()
 	wav.format = AudioStreamWAV.FORMAT_16_BITS
 	wav.mix_rate = rate
@@ -337,8 +383,10 @@ func _animate() -> void:
 		_tail.rotation.y = sin(_time * (4.0 if moving else 1.5)) * wag
 		_tail.rotation.x = sin(_time * 8.0) * (0.06 if moving else 0.02)
 	if _jaw:
-		var open := 0.42 if _roar > 0.0 else 0.06
+		var open := 0.42 if _roar > 0.0 else (0.28 if drinking else 0.06)
 		_jaw.rotation.x = lerpf(_jaw.rotation.x, -open, 0.2)
+	if drinking and _head and _roar <= 0.0:
+		_head.rotation.x = lerpf(_head.rotation.x, 0.62, 0.18)
 
 
 func _on_mouth_area(area: Area3D) -> void:

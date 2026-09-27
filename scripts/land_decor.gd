@@ -73,8 +73,12 @@ func _spot(rng: RandomNumberGenerator, clear: float) -> Vector3:
 	for _try in 8:
 		x = rng.randf_range(-Land.HALF + 16.0, Land.HALF - 16.0)
 		z = rng.randf_range(-Land.HALF + 16.0, Land.HALF - 16.0)
-		if Vector2(x, z).length() >= clear:
-			break
+		if Vector2(x, z).length() < clear or Land.in_river(x, z):
+			continue
+		return Vector3(x, Land.ground_y(x, z), z)
+	if Land.in_river(x, z):
+		var cz := Land.river_z(x)
+		z = cz + (Land.RIVER_HALF + 6.0) * (1.0 if z >= cz else -1.0)
 	return Vector3(x, Land.ground_y(x, z), z)
 
 

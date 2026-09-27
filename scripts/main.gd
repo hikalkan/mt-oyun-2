@@ -71,7 +71,11 @@ func _process(delta: float) -> void:
 	for seat in _seats:
 		if seat.dead:
 			continue
-		seat.hunger = maxf(seat.hunger - delta, 0.0)
+		var sipping := _mode_key == "kara" and seat.who != null and bool(seat.who.get("drinking"))
+		if sipping:
+			seat.hunger = minf(_hunger_full, seat.hunger + 8.0 * delta)
+		else:
+			seat.hunger = maxf(seat.hunger - delta, 0.0)
 		_paint_hunger(seat)
 		if seat.hunger <= 0.0:
 			_kill_seat(seat)
@@ -207,6 +211,7 @@ func _begin_land() -> void:
 	_hide_sea()
 	_paint_land_sky()
 	_build_grass()
+	_build_river()
 	var decor := Node3D.new()
 	decor.set_script(LandDecorScript)
 	add_child(decor)
@@ -285,6 +290,71 @@ func _build_grass() -> void:
 	ground.custom_aabb = AABB(Vector3(-half_span, -14.0, -half_span), Vector3(span, 32.0, span))
 	ground.extra_cull_margin = 80.0
 	add_child(ground)
+
+
+func _build_river() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var x := -Land.HALF
+	var step := 3.2
+	var i := 0
+	var left := Land.river_side(x, -Land.RIVER_HALF)
+	var right := Land.river_side(x, Land.RIVER_HALF)
+	while x < Land.HALF - 0.01:
+		var nx := minf(x + step, Land.HALF)
+		var nleft := Land.river_side(nx, -Land.RIVER_HALF)
+		var nright := Land.river_side(nx, Land.RIVER_HALF)
+		var u0 := float(i) * 0.22
+		var u1 := float(i + 1) * 0.22
+		_river_vert(st, left, Vector2(u0, 0.0))
+		_river_vert(st, right, Vector2(u0, 1.0))
+		_river_vert(st, nleft, Vector2(u1, 0.0))
+		_river_vert(st, right, Vector2(u0, 1.0))
+		_river_vert(st, nright, Vector2(u1, 1.0))
+		_river_vert(st, nleft, Vector2(u1, 0.0))
+		left = nleft
+		right = nright
+		x = nx
+		i += 1
+	st.generate_normals()
+	var water := MeshInstance3D.new()
+	water.name = "River"
+	water.mesh = st.commit()
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/river.gdshader")
+	water.material_override = mat
+	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(water)
+	_build_reeds()
+
+
+func _river_vert(st: SurfaceTool, point: Vector3, uv: Vector2) -> void:
+	st.set_uv(uv)
+	st.add_vertex(point)
+
+
+func _build_reeds() -> void:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.18, 0.52, 0.26)
+	mat.roughness = 0.7
+	var x := -Land.HALF + 10.0
+	var n := 0
+	while x < Land.HALF - 10.0:
+		for side in [-1.0, 1.0]:
+			var at := Land.river_side(x + float(n % 2) * 1.4, side * (Land.RIVER_HALF + 1.15), 0.0)
+			var reed := MeshInstance3D.new()
+			var mesh := CylinderMesh.new()
+			mesh.top_radius = 0.05
+			mesh.bottom_radius = 0.09
+			mesh.height = 1.35 + float(n % 3) * 0.4
+			mesh.radial_segments = 5
+			reed.mesh = mesh
+			reed.material_override = mat
+			reed.position = at + Vector3(0.0, mesh.height * 0.5, 0.0)
+			reed.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(reed)
+		x += 16.0
+		n += 1
 
 
 func _swap_first_to_rex() -> void:
@@ -368,8 +438,8 @@ func _spawn_titans(count: int) -> void:
 
 func _land_hint(pad: bool) -> String:
 	if pad:
-		return "Kumanda    Sol çubuk: koş    Sağ çubuk: bak\nA: zıpla    Y: kamera    LB: kükre\nHayvan yemezsen ölürsün. Dev dinozor yalnız yakına gelince ısırır."
-	return "W A S D veya oklar: koş    Fare: bak    Boşluk: zıpla\nP: kamera    K: kükre    Esc: fareyi bırak\nHayvan yemezsen ölürsün. Dev dinozor yalnız yakına gelince ısırır."
+		return "Kumanda    Sol çubuk: koş    Sağ çubuk: bak\nA: zıpla    Y: kamera    LB: kükre\nNehre girince su içersin. Dev dinozor yalnız yakına gelince ısırır."
+	return "W A S D veya oklar: koş    Fare: bak    Boşluk: zıpla\nP: kamera    K: kükre    Esc: fareyi bırak\nNehre girince su içersin. Dev dinozor yalnız yakına gelince ısırır."
 
 
 func _bind_seat(seat: Seat) -> void:
@@ -725,7 +795,12 @@ func _paint_hunger(seat: Seat) -> void:
 		seat.hunger_fill.color = Color(0.9, 0.22, 0.18).lerp(Color(0.95, 0.78, 0.22), t * 2.0)
 	if seat.dead:
 		return
-	if t < 0.28:
+	var sipping := _mode_key == "kara" and seat.who != null and bool(seat.who.get("drinking"))
+	if sipping:
+		seat.hunger_label.text = "Su içiyorsun"
+		seat.hunger_label.add_theme_color_override("font_color", Color(0.65, 0.88, 1.0))
+		seat.hunger_fill.color = Color(0.28, 0.62, 0.95)
+	elif t < 0.28:
 		seat.hunger_label.text = "Acıktın!"
 		seat.hunger_label.add_theme_color_override("font_color", Color(1, 0.45, 0.32))
 	else:
@@ -928,7 +1003,7 @@ func _refresh_menu() -> void:
 	if info:
 		if _mode_key == "kara":
 			var land: Dictionary = LAND_LEVELS[_diff_key]
-			info.text = "%d hayvan ye. Tokluk %d saniye sürer.\nKüçük hayvanlar kaçar. Dev dinozor yalnız yakına gelince ısırır." % [int(land.goal), int(land.hunger)]
+			info.text = "%d hayvan ye. Tokluk %d saniye sürer.\nNehirden su içebilirsin. Dev dinozor yalnız yakına gelince ısırır." % [int(land.goal), int(land.hunger)]
 		else:
 			var level: Dictionary = LEVELS[_diff_key]
 			info.text = "%d balık ye. Tokluk %d saniye sürer.\nKöpekbalığı, köpek ve kötü balık saldırır. Olta tutarsa ölürsün." % [int(level.goal), int(level.hunger)]

@@ -2,6 +2,7 @@ extends Object
 
 const HALF := 180.0
 const CLEARANCE := 2.0
+const RIVER_HALF := 7.0
 
 
 static func visual_span() -> float:
@@ -10,6 +11,23 @@ static func visual_span() -> float:
 
 static func ground_y(x: float, z: float) -> float:
 	return sin(x * 0.02) * 2.2 + cos(z * 0.017) * 1.8 + sin((x + z) * 0.008) * 3.0
+
+
+static func river_z(x: float) -> float:
+	return -16.0 + sin(x * 0.014) * 50.0
+
+
+static func in_river(x: float, z: float) -> bool:
+	return absf(z - river_z(x)) < RIVER_HALF + 0.8
+
+
+static func river_side(x: float, side: float, lift: float = 0.22) -> Vector3:
+	var ahead := river_z(x + 1.0) - river_z(x - 1.0)
+	var tangent := Vector3(2.0, 0.0, ahead).normalized()
+	var right := Vector3(tangent.z, 0.0, -tangent.x)
+	var p := Vector3(x, 0.0, river_z(x)) + right * side
+	p.y = ground_y(p.x, p.z) + lift
+	return p
 
 
 static func clamp_xz(p: Vector3, padding: float = CLEARANCE) -> Vector3:

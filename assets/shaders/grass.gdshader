@@ -23,6 +23,10 @@ float ground_h(vec2 xz) {
 	return sin(xz.x * 0.02) * 2.2 + cos(xz.y * 0.017) * 1.8 + sin((xz.x + xz.y) * 0.008) * 3.0;
 }
 
+float river_z(float x) {
+	return -16.0 + sin(x * 0.014) * 50.0;
+}
+
 void vertex() {
 	vec2 xz = VERTEX.xz;
 	float h = ground_h(xz);
@@ -44,6 +48,9 @@ void fragment() {
 	vec3 dirt = vec3(0.4, 0.32, 0.16);
 	vec3 grass = mix(low, high, patch);
 	grass = mix(grass, dirt, smoothstep(0.04, 0.16, slope));
+	float bank = abs(wpos.z - river_z(wpos.x));
+	float wet = smoothstep(12.0, 7.2, bank);
+	grass = mix(grass, vec3(0.24, 0.3, 0.16), wet * 0.7);
 	grass *= 0.9 + grain * 0.18;
 	ALBEDO = grass;
 	ROUGHNESS = 0.96;
