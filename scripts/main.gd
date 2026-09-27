@@ -4,15 +4,26 @@ const FishScript := preload("res://scripts/fish.gd")
 const EnemyScript := preload("res://scripts/enemy.gd")
 const FisherScript := preload("res://scripts/fisher.gd")
 const Bounds := preload("res://scripts/sea_bounds.gd")
+const RexScript := preload("res://scripts/rex.gd")
+const PreyScript := preload("res://scripts/prey.gd")
+const TitanScript := preload("res://scripts/titan.gd")
+const Land := preload("res://scripts/land_bounds.gd")
+const LandDecorScript := preload("res://scripts/land_decor.gd")
 const LEVELS := {
 	"kolay": {"goal": 8, "hunger": 48.0, "bite": 18.0, "fish": 150, "sharks": 2, "dogs": 2, "mean": 3, "fishers": 2, "hook": -16.0, "reach": 12.0, "title": "Kolay"},
 	"orta": {"goal": 15, "hunger": 30.0, "bite": 12.0, "fish": 110, "sharks": 3, "dogs": 3, "mean": 4, "fishers": 3, "hook": -22.0, "reach": 16.0, "title": "Orta"},
 	"zor": {"goal": 25, "hunger": 16.0, "bite": 7.0, "fish": 72, "sharks": 4, "dogs": 4, "mean": 6, "fishers": 5, "hook": -32.0, "reach": 18.0, "title": "Zor"},
 }
+const LAND_LEVELS := {
+	"kolay": {"goal": 8, "hunger": 48.0, "bite": 18.0, "prey": 70, "titans": 1, "title": "Kolay"},
+	"orta": {"goal": 15, "hunger": 30.0, "bite": 12.0, "prey": 50, "titans": 2, "title": "Orta"},
+	"zor": {"goal": 25, "hunger": 16.0, "bite": 7.0, "prey": 36, "titans": 3, "title": "Zor"},
+}
 
 @onready var player = $Player
 
 var _player_count := 1
+var _mode_key := "deniz"
 var _diff_key := "orta"
 var _playing := false
 var _finished := false
@@ -25,7 +36,12 @@ var _fish_count := 44
 var _seats: Array[Seat] = []
 var _env: Environment
 var _menu: CanvasLayer
+var _menu_bg: ColorRect
+var _title_label: Label
 var _choice_buttons: Array[Button] = []
+var _water: MeshInstance3D
+var _sand: MeshInstance3D
+var _rays: Node3D
 var _goal_label: Label
 var _death_layer: Control
 var _end_label: Label
@@ -69,6 +85,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _update_fog() -> void:
+	if _mode_key == "kara" and _playing:
+		return
 	var cam := _fog_camera()
 	if cam == null or _env == null:
 		return
@@ -138,13 +156,7 @@ func _add_seat(who, score_label: Label, form_label: Label, camera_label: Label, 
 	seat.hint_label = hint_label
 	seat.hunger = _hunger_full
 	_seats.append(seat)
-	who.ate_fish.connect(_on_ate.bind(seat))
-	who.form_changed.connect(_on_form.bind(seat))
-	who.camera_changed.connect(_on_camera.bind(seat))
-	who.got_hurt.connect(_on_hurt.bind(seat))
-	who.got_downed.connect(_on_downed.bind(seat))
-	_style_form(seat)
-	seat.camera_label.text = who.camera_name()
+	_bind_seat(seat)
 	if hint_label:
 		hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_build_hunger_bar(seat)
@@ -161,6 +173,9 @@ func _start_game() -> void:
 	if _playing:
 		return
 	_playing = true
+	if _mode_key == "kara":
+		_begin_land()
+		return
 	var level: Dictionary = LEVELS[_diff_key]
 	_goal = int(level.goal)
 	_hunger_full = float(level.hunger)
@@ -182,6 +197,206 @@ func _start_game() -> void:
 	_menu.hide()
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _begin_land() -> void:
+	var level: Dictionary = LAND_LEVELS[_diff_key]
+	_goal = int(level.goal)
+	_hunger_full = float(level.hunger)
+	_bite_fill = float(level.bite)
+	_hide_sea()
+	_paint_land_sky()
+	_build_grass()
+	var decor := Node3D.new()
+	decor.set_script(LandDecorScript)
+	add_child(decor)
+	_swap_first_to_rex()
+	if _player_count == 2:
+		_spawn_second_rex()
+		_setup_split()
+	for seat in _seats:
+		seat.hunger = _hunger_full
+		seat.who.health = 100.0
+		_paint_hunger(seat)
+		_paint_health(seat)
+		_style_form(seat)
+		if seat.hint_label:
+			seat.hint_label.text = _land_hint(seat.who.pad_id >= 0)
+	_spawn_prey(int(level.prey))
+	_spawn_titans(int(level.titans))
+	_layout_hud()
+	_refresh_goal()
+	for seat in _seats:
+		_refresh_score(seat)
+	_menu.hide()
+	get_tree().paused = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _hide_sea() -> void:
+	if _water:
+		_water.visible = false
+	if _sand:
+		_sand.visible = false
+	if _rays:
+		_rays.visible = false
+	var decor := get_node_or_null("Decor")
+	if decor:
+		decor.visible = false
+		decor.process_mode = Node.PROCESS_MODE_DISABLED
+
+
+func _paint_land_sky() -> void:
+	var sky_mat := _env.sky.sky_material as ProceduralSkyMaterial
+	if sky_mat:
+		sky_mat.sky_top_color = Color(0.28, 0.55, 0.92)
+		sky_mat.sky_horizon_color = Color(0.95, 0.86, 0.62)
+		sky_mat.ground_horizon_color = Color(0.45, 0.58, 0.28)
+		sky_mat.ground_bottom_color = Color(0.22, 0.32, 0.12)
+	_env.fog_density = 0.0016
+	_env.fog_light_color = Color(0.78, 0.84, 0.68)
+	_env.ambient_light_color = Color(0.72, 0.76, 0.6)
+	_env.ambient_light_energy = 0.95
+	var sun := get_node_or_null("Sun") as DirectionalLight3D
+	if sun:
+		sun.light_color = Color(1.0, 0.94, 0.78)
+		sun.light_energy = 1.75
+		sun.rotation_degrees = Vector3(-52, 28, 0)
+	var fill := get_node_or_null("Fill") as DirectionalLight3D
+	if fill:
+		fill.light_color = Color(0.62, 0.7, 0.42)
+		fill.light_energy = 0.34
+
+
+func _build_grass() -> void:
+	var ground := MeshInstance3D.new()
+	ground.name = "Grass"
+	var plane := PlaneMesh.new()
+	var span := Land.visual_span()
+	plane.size = Vector2(span, span)
+	plane.subdivide_width = 96
+	plane.subdivide_depth = 96
+	ground.mesh = plane
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/grass.gdshader")
+	ground.material_override = mat
+	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var half_span := span * 0.5
+	ground.custom_aabb = AABB(Vector3(-half_span, -14.0, -half_span), Vector3(span, 32.0, span))
+	ground.extra_cull_margin = 80.0
+	add_child(ground)
+
+
+func _swap_first_to_rex() -> void:
+	var rex = RexScript.new()
+	rex.pad_id = player.pad_id
+	rex.body_layer = player.body_layer
+	rex.hood_layer = player.hood_layer
+	rex.owns_screen = true
+	rex.position = Land.stand(Vector3.ZERO)
+	player.remove_from_group("player")
+	player.set_owns_screen(false)
+	player.visible = false
+	player.set_physics_process(false)
+	player.set_process_unhandled_input(false)
+	add_child(rex)
+	var seat: Seat = _seats[0]
+	_unbind_seat(seat)
+	player.queue_free()
+	seat.who = rex
+	_bind_seat(seat)
+	player = rex
+
+
+func _spawn_second_rex() -> void:
+	var body = RexScript.new()
+	body.position = Land.stand(Vector3(16, 0, 12))
+	body.pad_id = 0
+	body.body_layer = 16
+	body.hood_layer = 8
+	body.owns_screen = false
+	body.yaw = PI
+	add_child(body)
+	var score_label := _hud_label("Yediğin hayvan: 0", 28)
+	var form_label := _hud_label("T-Rex", 24)
+	var camera_label := _hud_label("Arkadan", 22)
+	var hint := _hud_label(_land_hint(true), 18)
+	$HUD/Root.add_child(score_label)
+	$HUD/Root.add_child(form_label)
+	$HUD/Root.add_child(camera_label)
+	$HUD/Root.add_child(hint)
+	_add_seat(body, score_label, form_label, camera_label, hint)
+	_seats[0].who.set_partner_body(body.body_layer)
+	body.set_partner_body(_seats[0].who.body_layer)
+
+
+func _spawn_prey(count: int) -> void:
+	var close_count := mini(18, count)
+	var mid_count := mini(int(float(count) * 0.7), count)
+	for i in count:
+		var prey = PreyScript.new()
+		var kind := PreyScript.Kind.TINY
+		var roll := i % 6
+		if roll >= 4:
+			kind = PreyScript.Kind.HORN
+		elif roll >= 2:
+			kind = PreyScript.Kind.DUCK
+		prey.setup(kind)
+		var around: Vector3 = _seats[i % _seats.size()].who.global_position
+		var pos: Vector3
+		if i < close_count:
+			var ang := TAU * float(i) / float(close_count)
+			pos = around + Vector3(cos(ang), 0.0, sin(ang)) * randf_range(10.0, 22.0)
+			pos = Land.stand(pos)
+		elif i < mid_count:
+			pos = Land.nearby(around, 18.0, 55.0)
+		else:
+			pos = Land.nearby(around, 48.0, 120.0)
+		prey.position = pos
+		add_child(prey)
+
+
+func _spawn_titans(count: int) -> void:
+	for i in count:
+		var titan = TitanScript.new()
+		var around: Vector3 = _seats[i % _seats.size()].who.global_position
+		var ang := TAU * float(i) / float(maxi(count, 1)) + randf_range(-0.25, 0.25)
+		var dist := randf_range(58.0, 110.0)
+		titan.position = Land.stand(around + Vector3(cos(ang) * dist, 0.0, sin(ang) * dist), 12.0)
+		add_child(titan)
+
+
+func _land_hint(pad: bool) -> String:
+	if pad:
+		return "Kumanda    Sol çubuk: koş    Sağ çubuk: bak\nA: zıpla    Y: kamera    LB: kükre\nHayvan yemezsen ölürsün. Dev dinozor yalnız yakına gelince ısırır."
+	return "W A S D veya oklar: koş    Fare: bak    Boşluk: zıpla\nP: kamera    K: kükre    Esc: fareyi bırak\nHayvan yemezsen ölürsün. Dev dinozor yalnız yakına gelince ısırır."
+
+
+func _bind_seat(seat: Seat) -> void:
+	var who = seat.who
+	who.ate_fish.connect(_on_ate.bind(seat))
+	who.form_changed.connect(_on_form.bind(seat))
+	who.camera_changed.connect(_on_camera.bind(seat))
+	who.got_hurt.connect(_on_hurt.bind(seat))
+	who.got_downed.connect(_on_downed.bind(seat))
+	_style_form(seat)
+	seat.camera_label.text = who.camera_name()
+
+
+func _unbind_seat(seat: Seat) -> void:
+	var who = seat.who
+	if who == null:
+		return
+	if who.ate_fish.is_connected(_on_ate.bind(seat)):
+		who.ate_fish.disconnect(_on_ate.bind(seat))
+	if who.form_changed.is_connected(_on_form.bind(seat)):
+		who.form_changed.disconnect(_on_form.bind(seat))
+	if who.camera_changed.is_connected(_on_camera.bind(seat)):
+		who.camera_changed.disconnect(_on_camera.bind(seat))
+	if who.got_hurt.is_connected(_on_hurt.bind(seat)):
+		who.got_hurt.disconnect(_on_hurt.bind(seat))
+	if who.got_downed.is_connected(_on_downed.bind(seat)):
+		who.got_downed.disconnect(_on_downed.bind(seat))
 
 
 func _spawn_second() -> void:
@@ -395,7 +610,8 @@ func _total_score() -> int:
 
 
 func _refresh_score(seat: Seat) -> void:
-	seat.score_label.text = "Yediğin balık: %d" % seat.score
+	var word := "hayvan" if _mode_key == "kara" else "balık"
+	seat.score_label.text = "Yediğin %s: %d" % [word, seat.score]
 	_refresh_goal()
 
 
@@ -582,7 +798,9 @@ func _build_death_ui() -> void:
 
 func _style_form(seat: Seat) -> void:
 	seat.form_label.text = seat.who.form_name()
-	if seat.who.is_shark():
+	if _mode_key == "kara":
+		seat.form_label.add_theme_color_override("font_color", Color(0.78, 0.92, 0.55))
+	elif seat.who.is_shark():
 		seat.form_label.add_theme_color_override("font_color", Color(0.9, 0.93, 0.96))
 	else:
 		seat.form_label.add_theme_color_override("font_color", Color(0.72, 0.9, 1))
@@ -598,20 +816,29 @@ func _build_menu() -> void:
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_STOP
 	_menu.add_child(bg)
+	_menu_bg = bg
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_menu.add_child(center)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 16)
+	box.add_theme_constant_override("separation", 10)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	center.add_child(box)
 	var title := Label.new()
 	title.text = "Deniz"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 64)
+	title.add_theme_font_size_override("font_size", 56)
 	title.add_theme_color_override("font_color", Color(0.85, 0.95, 1))
 	box.add_child(title)
+	_title_label = title
+	box.add_child(_menu_caption("Nerede?"))
+	var modes := HBoxContainer.new()
+	modes.alignment = BoxContainer.ALIGNMENT_CENTER
+	modes.add_theme_constant_override("separation", 16)
+	box.add_child(modes)
+	modes.add_child(_choice_button("Deniz", "mode", "deniz"))
+	modes.add_child(_choice_button("Kara", "mode", "kara"))
 	box.add_child(_menu_caption("Kaç kişi?"))
 	var people := HBoxContainer.new()
 	people.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -636,6 +863,8 @@ func _build_menu() -> void:
 	var info := Label.new()
 	info.name = "Info"
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.custom_minimum_size = Vector2(760, 0)
 	info.add_theme_font_size_override("font_size", 20)
 	info.add_theme_color_override("font_color", Color(0.9, 0.95, 1))
 	box.add_child(info)
@@ -661,7 +890,7 @@ func _menu_caption(text: String) -> Label:
 func _choice_button(text: String, kind: String, value) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size = Vector2(180, 68)
+	button.custom_minimum_size = Vector2(180, 60)
 	button.add_theme_font_size_override("font_size", 30)
 	button.set_meta("kind", kind)
 	button.set_meta("value", value)
@@ -673,6 +902,8 @@ func _choice_button(text: String, kind: String, value) -> Button:
 func _on_choice(kind: String, value) -> void:
 	if kind == "count":
 		_player_count = int(value)
+	elif kind == "mode":
+		_mode_key = str(value)
 	else:
 		_diff_key = str(value)
 	_refresh_menu()
@@ -681,15 +912,26 @@ func _on_choice(kind: String, value) -> void:
 func _refresh_menu() -> void:
 	for button in _choice_buttons:
 		var on := false
-		if str(button.get_meta("kind")) == "count":
+		var button_kind := str(button.get_meta("kind"))
+		if button_kind == "count":
 			on = int(button.get_meta("value")) == _player_count
+		elif button_kind == "mode":
+			on = str(button.get_meta("value")) == _mode_key
 		else:
 			on = str(button.get_meta("value")) == _diff_key
 		_style_choice(button, on)
+	if _title_label:
+		_title_label.text = "Kara" if _mode_key == "kara" else "Deniz"
+	if _menu_bg:
+		_menu_bg.color = Color(0.14, 0.28, 0.12) if _mode_key == "kara" else Color(0.04, 0.18, 0.34)
 	var info := _menu.find_child("Info", true, false) as Label
 	if info:
-		var level: Dictionary = LEVELS[_diff_key]
-		info.text = "%d balık ye. Tokluk %d saniye sürer.\nKöpekbalığı, köpek ve kötü balık saldırır. Olta tutarsa ölürsün." % [int(level.goal), int(level.hunger)]
+		if _mode_key == "kara":
+			var land: Dictionary = LAND_LEVELS[_diff_key]
+			info.text = "%d hayvan ye. Tokluk %d saniye sürer.\nKüçük hayvanlar kaçar. Dev dinozor yalnız yakına gelince ısırır." % [int(land.goal), int(land.hunger)]
+		else:
+			var level: Dictionary = LEVELS[_diff_key]
+			info.text = "%d balık ye. Tokluk %d saniye sürer.\nKöpekbalığı, köpek ve kötü balık saldırır. Olta tutarsa ölürsün." % [int(level.goal), int(level.hunger)]
 
 
 func _style_choice(button: Button, on: bool) -> void:
@@ -766,6 +1008,7 @@ func _build_sun() -> void:
 	sun.directional_shadow_max_distance = 90.0
 	add_child(sun)
 	var fill := DirectionalLight3D.new()
+	fill.name = "Fill"
 	fill.rotation_degrees = Vector3(-18, 210, 0)
 	fill.light_color = Color(0.35, 0.58, 0.78)
 	fill.light_energy = 0.28
@@ -779,8 +1022,10 @@ func _build_water() -> void:
 	plane.size = Vector2(span, span)
 	plane.subdivide_width = 80
 	plane.subdivide_depth = 80
+	water.name = "Water"
 	water.mesh = plane
 	water.position = Vector3(0, Bounds.SURFACE_Y, 0)
+	_water = water
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://assets/shaders/sea.gdshader")
 	var sun := get_node_or_null("Sun")
@@ -799,7 +1044,9 @@ func _build_sand() -> void:
 	plane.size = Vector2(span, span)
 	plane.subdivide_width = 72
 	plane.subdivide_depth = 72
+	bed.name = "Sand"
 	bed.mesh = plane
+	_sand = bed
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://assets/shaders/sand.gdshader")
 	mat.set_shader_parameter("floor_y", Bounds.FLOOR_Y)
@@ -812,6 +1059,9 @@ func _build_sand() -> void:
 
 
 func _build_rays() -> void:
+	_rays = Node3D.new()
+	_rays.name = "Rays"
+	add_child(_rays)
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
@@ -832,7 +1082,7 @@ func _build_rays() -> void:
 		ray.position = Vector3(rng.randf_range(-110.0, 110.0), -36.0, rng.randf_range(-110.0, 110.0))
 		ray.rotation_degrees = Vector3(7.0, float(i) * 18.0, -5.0)
 		ray.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(ray)
+		_rays.add_child(ray)
 
 
 class Seat extends RefCounted:
