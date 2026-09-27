@@ -9,6 +9,7 @@ signal got_downed
 
 const Land := preload("res://scripts/land_bounds.gd")
 const BabyScript := preload("res://scripts/baby.gd")
+const Dust := preload("res://scripts/dust.gd")
 
 var pad_id := -1
 var body_layer := 2
@@ -56,6 +57,14 @@ var _avatar: Node3D
 var _grown := 1.0
 var _meals := 0
 var _grow_tween: Tween
+var _lag := 0.0
+var _last_yaw := 0.0
+var _dip := 0.0
+var _blink := 0.0
+var _blink_wait := 2.6
+var _step_mark := 0.0
+var _leg_home: Array[float] = []
+var _eyes: Array[MeshInstance3D] = []
 const MEALS_TO_HUNT := 6
 
 
@@ -233,6 +242,10 @@ func _physics_process(delta: float) -> void:
 	if _roar > 0.0:
 		_roar -= delta
 	rotation.y = yaw
+	var spun := wrapf(yaw - _last_yaw, -PI, PI)
+	_last_yaw = yaw
+	_lag = clampf(_lag + spun, -0.28, 0.28)
+	_lag = lerpf(_lag, 0.0, 1.0 - exp(-4.2 * delta))
 	if _head:
 		_head.rotation.x = pitch
 
@@ -249,7 +262,8 @@ func _physics_process(delta: float) -> void:
 		_vy = 10.5 + (_grown - 1.0) * 3.0
 		_grounded = false
 	else:
-		_vy -= 24.0 * delta
+		var gravity := 23.0 if _vy > 0.0 else 36.0
+		_vy -= gravity * delta
 	var pos := global_position
 	var next := pos + Vector3(horiz.x, 0.0, horiz.z) * delta
 	next = Land.clamp_xz(next, 4.0)
@@ -260,6 +274,10 @@ func _physics_process(delta: float) -> void:
 	var floor_y := Land.ground_y(next.x, next.z)
 	next.y = pos.y + _vy * delta
 	if next.y <= floor_y:
+		if not _grounded and _vy < -7.0:
+			_dip = 0.14 * _grown
+			if not Land.in_river(next.x, next.z):
+				Dust.puff(get_parent(), Vector3(next.x, floor_y + 0.1, next.z), 1.4)
 		next.y = floor_y
 		if _vy < 0.0:
 			_vy = 0.0
@@ -393,7 +411,10 @@ func _show_camera() -> void:
 
 
 func _seat_cameras() -> void:
-	_chase.position = Vector3(0.0, 4.8, 11.0) * _grown
+	var bob := 0.0
+	if Vector2(velocity.x, velocity.z).length() > 1.2 and _grounded:
+		bob = sin(_time * 7.2) * 0.045 * _grown
+	_chase.position = Vector3(0.0, 4.8, 11.0) * _grown + Vector3(0.0, bob, 0.0)
 	if _head:
 		_head.position = Vector3(0.0, 2.45, -1.7) * _grown
 	if _hood:
@@ -412,20 +433,54 @@ func _seat_cameras() -> void:
 
 
 func _animate() -> void:
-	var moving := Vector2(velocity.x, velocity.z).length() > 0.8
+	var speed := Vector2(velocity.x, velocity.z).length()
+	var moving := speed > 0.8 and _grounded
 	var pace := 7.2 if moving else 1.6
 	var swing := 0.55 if moving else 0.06
+	var phase := _time * pace
+	if moving and not Land.in_river(global_position.x, global_position.z):
+		var mark := floorf(phase / PI)
+		if mark != _step_mark:
+			_step_mark = mark
+			var side := 1.0 if sin(phase) > 0.0 else -1.0
+			var at := global_position + global_transform.basis.x * side * 0.55 * _grown
+			at.y = Land.ground_y(at.x, at.z) + 0.08
+			Dust.puff(get_parent(), at, 0.7)
 	for i in _legs.size():
-		_legs[i].rotation.x = sin(_time * pace + float(i) * PI) * swing
+		var step := sin(phase + float(i) * PI)
+		_legs[i].rotation.x = step * swing
+		if i < _leg_home.size():
+			_legs[i].position.y = _leg_home[i] + maxf(step, 0.0) * (0.18 if moving else 0.0)
+	if _avatar:
+		var breath := sin(_time * 1.7) * 0.025
+		var hop := absf(sin(phase)) * (0.07 if moving else 0.0)
+		_dip = lerpf(_dip, 0.0, 0.12)
+		_avatar.position.y = breath + hop - _dip
+		_avatar.rotation.y = -_lag * 0.85
+		_avatar.rotation.z = lerpf(_avatar.rotation.z, -_lag * 0.45, 0.2)
+		_avatar.rotation.x = lerpf(_avatar.rotation.x, clampf(-_vy * 0.02, -0.2, 0.16), 0.18)
 	if _tail:
-		var wag := 0.22 if moving else 0.08
-		_tail.rotation.y = sin(_time * (4.0 if moving else 1.5)) * wag
-		_tail.rotation.x = sin(_time * 8.0) * (0.06 if moving else 0.02)
+		var wag := 0.28 if moving else 0.07
+		_tail.rotation.y = lerpf(_tail.rotation.y, sin(_time * (3.2 if moving else 1.3)) * wag - _lag * 0.6, 0.2)
+		_tail.rotation.x = sin(_time * (6.0 if moving else 1.4)) * (0.05 if moving else 0.02)
 	if _jaw:
 		var open := 0.42 if _roar > 0.0 else (0.28 if drinking else 0.06)
 		_jaw.rotation.x = lerpf(_jaw.rotation.x, -open, 0.2)
 	if drinking and _head and _roar <= 0.0:
 		_head.rotation.x = lerpf(_head.rotation.x, 0.62, 0.18)
+	_blink_eyes()
+
+
+func _blink_eyes() -> void:
+	_blink_wait -= get_physics_process_delta_time()
+	if _blink_wait <= 0.0:
+		_blink = 0.09
+		_blink_wait = randf_range(2.4, 5.2)
+	var shut := _blink > 0.0
+	if _blink > 0.0:
+		_blink -= get_physics_process_delta_time()
+	for eye in _eyes:
+		eye.scale.y = 0.12 if shut else 1.0
 
 
 func _bite_overlapped_titans() -> void:
@@ -563,23 +618,24 @@ func _add_leg(side: float, skin: Material, dark: Material) -> void:
 	hip.position = Vector3(side, 1.45, 0.2)
 	_avatar.add_child(hip)
 	_legs.append(hip)
+	_leg_home.append(hip.position.y)
 	_place(hip, _box(Vector3(0.32, 0.72, 0.36)), Vector3(0.0, -0.32, 0.0), Vector3.ZERO, Vector3.ONE, skin)
 	_place(hip, _box(Vector3(0.26, 0.62, 0.3)), Vector3(0.0, -0.95, 0.06), Vector3.ZERO, Vector3.ONE, dark)
 	_place(hip, _box(Vector3(0.36, 0.12, 0.7)), Vector3(0.0, -1.28, -0.16), Vector3.ZERO, Vector3.ONE, dark)
 
 
 func _eye(parent: Node3D, pos: Vector3) -> void:
-	_body(parent, 0.09, Vector3.ONE, pos, _mat(Color(0.95, 0.95, 0.9), 0.2, true))
-	_body(parent, 0.045, Vector3.ONE, pos + Vector3(0.0, 0.0, -0.06), _mat(Color(0.08, 0.06, 0.04), 0.35, true))
+	_eyes.append(_body(parent, 0.09, Vector3.ONE, pos, _mat(Color(0.95, 0.95, 0.9), 0.2, true)))
+	_eyes.append(_body(parent, 0.045, Vector3.ONE, pos + Vector3(0.0, 0.0, -0.06), _mat(Color(0.08, 0.06, 0.04), 0.35, true)))
 
 
-func _body(parent: Node3D, radius: float, scl: Vector3, pos: Vector3, mat: Material) -> void:
+func _body(parent: Node3D, radius: float, scl: Vector3, pos: Vector3, mat: Material) -> MeshInstance3D:
 	var mesh := SphereMesh.new()
 	mesh.radius = radius
 	mesh.height = radius * 2.0
 	mesh.radial_segments = 22
 	mesh.rings = 10
-	_place(parent, mesh, pos, Vector3.ZERO, scl, mat)
+	return _place(parent, mesh, pos, Vector3.ZERO, scl, mat)
 
 
 func _box(size: Vector3) -> BoxMesh:
@@ -588,7 +644,7 @@ func _box(size: Vector3) -> BoxMesh:
 	return mesh
 
 
-func _place(parent: Node3D, mesh: Mesh, pos: Vector3, rot: Vector3, scl: Vector3, mat: Material) -> void:
+func _place(parent: Node3D, mesh: Mesh, pos: Vector3, rot: Vector3, scl: Vector3, mat: Material) -> MeshInstance3D:
 	var n := MeshInstance3D.new()
 	n.mesh = mesh
 	n.position = pos
@@ -597,6 +653,7 @@ func _place(parent: Node3D, mesh: Mesh, pos: Vector3, rot: Vector3, scl: Vector3
 	n.material_override = mat
 	n.layers = body_layer
 	parent.add_child(n)
+	return n
 
 
 const SkinShader := preload("res://assets/shaders/skin.gdshader")

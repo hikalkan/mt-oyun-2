@@ -28,6 +28,8 @@ var pitch := 0.0
 
 var _time := 0.0
 var _switch_lock := 0.0
+var _bank := 0.0
+var _last_yaw := 0.0
 var _whale_fluke: Node3D
 var _shark_tail: Node3D
 var _jets: Array[MeshInstance3D] = []
@@ -184,6 +186,10 @@ func _physics_process(delta: float) -> void:
 		_switch_lock -= delta
 	rotation.y = yaw
 	_pitch.rotation.x = pitch
+	var spun := wrapf(yaw - _last_yaw, -PI, PI)
+	_last_yaw = yaw
+	_bank = clampf(_bank + spun * 1.4, -0.35, 0.35)
+	_bank = lerpf(_bank, 0.0, 1.0 - exp(-3.0 * delta))
 
 	var wish := _wish_dir()
 	if wish.length_squared() > 0.001:
@@ -344,8 +350,15 @@ func _aim_chase() -> void:
 func _animate() -> void:
 	var moving := velocity.length() > 0.4
 	var wag := 0.55 if moving else 0.22
+	if _whale:
+		var swim := sin(_time * (1.6 if moving else 0.7)) * (0.05 if moving else 0.02)
+		_whale.rotation.x = swim
+		_whale.rotation.z = lerpf(_whale.rotation.z, -_bank, 0.2)
 	if _whale_fluke:
 		_whale_fluke.rotation.x = sin(_time * (2.2 if moving else 1.1)) * wag
+	if _shark:
+		_shark.rotation.z = lerpf(_shark.rotation.z, -_bank * 0.8, 0.2)
+		_shark.rotation.x = sin(_time * (2.4 if moving else 0.8)) * (0.04 if moving else 0.015)
 	if _shark_tail:
 		_shark_tail.rotation.y = sin(_time * (5.5 if moving else 2.4)) * (0.45 if moving else 0.18)
 	var spray := form == Form.WHALE and _q_held()

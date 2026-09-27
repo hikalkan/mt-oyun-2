@@ -12,6 +12,7 @@ var _hunt_wait := 0.4
 var _jaw: Node3D
 var _tail: Node3D
 var _legs: Array[Node3D] = []
+var _leg_home: Array[float] = []
 var _size := 0.4
 var _grow_tween: Tween
 var _hatched := false
@@ -136,8 +137,11 @@ func _physics_process(delta: float) -> void:
 	var moving := dist > 0.4
 	var pace := 8.0 if moving else 2.0
 	for i in _legs.size():
+		var step := sin(_time * pace + float(i) * PI)
 		var swing := 0.65 if moving else 0.08
-		_legs[i].rotation.x = sin(_time * pace + float(i) * PI) * swing
+		_legs[i].rotation.x = step * swing
+		if i < _leg_home.size():
+			_legs[i].position.y = _leg_home[i] + maxf(step, 0.0) * (0.06 if moving else 0.0)
 	if _tail:
 		_tail.rotation.y = sin(_time * (5.0 if moving else 1.8)) * (0.28 if moving else 0.08)
 	if _jaw:
@@ -247,6 +251,7 @@ func _add_leg(side: float, skin: Material, dark: Material) -> void:
 	hip.position = Vector3(side, 0.72, 0.1)
 	add_child(hip)
 	_legs.append(hip)
+	_leg_home.append(hip.position.y)
 	_box(hip, Vector3(0.18, 0.42, 0.2), Vector3(0.0, -0.2, 0.0), skin)
 	_box(hip, Vector3(0.2, 0.1, 0.36), Vector3(0.0, -0.42, -0.06), dark)
 

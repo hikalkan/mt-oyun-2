@@ -15,6 +15,7 @@ var _eating := false
 var _wander_wait := 0.0
 var _tail: Node3D
 var _legs: Array[Node3D] = []
+var _leg_home: Array[float] = []
 var _bob: Node3D
 
 
@@ -132,8 +133,13 @@ func _animate(_delta: float, eating: bool) -> void:
 	if not moving:
 		pace = 2.0
 	for i in _legs.size():
+		var step := sin(Time.get_ticks_msec() * 0.001 * pace + float(i) * PI)
 		var swing := 0.7 if moving else 0.08
-		_legs[i].rotation.x = sin(Time.get_ticks_msec() * 0.001 * pace + float(i) * PI) * swing
+		_legs[i].rotation.x = step * swing
+		if i < _leg_home.size():
+			_legs[i].position.y = _leg_home[i] + maxf(step, 0.0) * (0.08 if moving else 0.0)
+	if _bob:
+		_bob.position.y = absf(sin(Time.get_ticks_msec() * 0.001 * pace)) * (0.04 if moving else 0.012)
 	if _tail:
 		_tail.rotation.y = sin(Time.get_ticks_msec() * 0.01) * (0.4 if moving else 0.12)
 
@@ -221,6 +227,7 @@ func _add_leg(parent: Node3D, side: float, hip_y: float, mat: Material) -> void:
 	hip.position = Vector3(side, hip_y, 0.05)
 	parent.add_child(hip)
 	_legs.append(hip)
+	_leg_home.append(hip.position.y)
 	_place(hip, _box(Vector3(0.1, hip_y * 0.85, 0.12)), Vector3(0.0, -hip_y * 0.4, 0.0), Vector3.ZERO, Vector3.ONE, mat)
 
 

@@ -3,6 +3,7 @@ extends Area3D
 const Land := preload("res://scripts/land_bounds.gd")
 const SkinShader := preload("res://assets/shaders/skin.gdshader")
 const Blood := preload("res://scripts/blood.gd")
+const Dust := preload("res://scripts/dust.gd")
 const AGGRO_DIST := 11.0
 const LEASH_DIST := 15.0
 const BITE_REACH := 4.0
@@ -22,6 +23,9 @@ var _voice: AudioStreamPlayer3D
 var _snarl: AudioStream = preload("res://assets/audio/titan_roar.ogg")
 var _eaten := false
 var _scared := false
+var _time := 0.0
+var _step_mark := 0.0
+var _leg_home: Array[float] = []
 
 
 func _ready() -> void:
@@ -49,6 +53,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if _eaten:
 		return
+	_time += delta
 	if _bite_wait > 0.0:
 		_bite_wait -= delta
 	if _wander_wait > 0.0:
@@ -125,11 +130,23 @@ func _face() -> void:
 func _animate() -> void:
 	var moving := Vector2(_vel.x, _vel.z).length() > 0.3
 	var pace := 3.2 if _chasing else (1.8 if moving else 0.6)
+	var phase := _time * pace * 3.0
+	if _chasing:
+		var mark := floorf(phase / PI)
+		if mark != _step_mark:
+			_step_mark = mark
+			var at := global_position + global_transform.basis.x * (0.9 if sin(phase) > 0.0 else -0.9)
+			at.y = Land.ground_y(at.x, at.z) + 0.15
+			Dust.puff(get_parent(), at, 1.5)
 	for i in _legs.size():
+		var step := sin(phase + float(i) * PI)
 		var swing := 0.38 if moving else 0.04
-		_legs[i].rotation.x = sin(Time.get_ticks_msec() * 0.001 * pace * 3.0 + float(i) * PI) * swing
+		_legs[i].rotation.x = step * swing
+		if i < _leg_home.size():
+			_legs[i].position.y = _leg_home[i] + maxf(step, 0.0) * (0.28 if moving else 0.0)
 	if _tail:
-		_tail.rotation.y = sin(Time.get_ticks_msec() * 0.004) * (0.18 if moving else 0.06)
+		_tail.rotation.y = sin(_time * 2.2) * (0.2 if moving else 0.06)
+		_tail.rotation.x = sin(_time * 1.3) * (0.05 if moving else 0.02)
 
 
 func _nearest_player():
@@ -204,6 +221,7 @@ func _add_leg(side: float, skin: Material, dark: Material) -> void:
 	hip.position = Vector3(side, 2.6, 0.3)
 	add_child(hip)
 	_legs.append(hip)
+	_leg_home.append(hip.position.y)
 	_place(hip, _box(Vector3(0.7, 1.35, 0.75)), Vector3(0.0, -0.6, 0.0), Vector3.ZERO, Vector3.ONE, skin)
 	_place(hip, _box(Vector3(0.55, 1.15, 0.6)), Vector3(0.0, -1.7, 0.1), Vector3.ZERO, Vector3.ONE, dark)
 	_place(hip, _box(Vector3(0.8, 0.22, 1.45)), Vector3(0.0, -2.35, -0.35), Vector3.ZERO, Vector3.ONE, dark)
