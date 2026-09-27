@@ -449,8 +449,8 @@ func _spawn_titans(count: int) -> void:
 
 func _land_hint(pad: bool) -> String:
 	if pad:
-		return "Kumanda    Sol çubuk: koş    Sağ çubuk: bak\nA: zıpla    Y: kamera    LB: kükre\nNehre girince su içersin. Dev dinozor yalnız yakına gelince ısırır."
-	return "W A S D veya oklar: koş    Fare: bak    Boşluk: zıpla\nP: kamera    K: kükre    Esc: fareyi bırak\nNehre girince su içersin. Dev dinozor yalnız yakına gelince ısırır."
+		return "Kumanda    Sol çubuk: koş    Sağ çubuk: bak\nA: zıpla    Y: kamera    LB: kükre    X: bebek\nSen yiyince bebek de yer. Nehirden su iç. Dev dinozor yakına gelince ısırır."
+	return "W A S D veya oklar: koş    Fare: bak    Boşluk: zıpla\nP: kamera    K: kükre    B: bebek    Esc: fareyi bırak\nSen yiyince bebek de yer. Nehirden su iç. Dev dinozor yakına gelince ısırır."
 
 
 func _bind_seat(seat: Seat) -> void:

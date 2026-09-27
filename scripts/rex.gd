@@ -7,6 +7,7 @@ signal got_hurt(left: float)
 signal got_downed
 
 const Land := preload("res://scripts/land_bounds.gd")
+const BabyScript := preload("res://scripts/baby.gd")
 
 var pad_id := -1
 var body_layer := 2
@@ -43,6 +44,7 @@ var _hood: MeshInstance3D
 var _voice: AudioStreamPlayer3D
 var _roar_call: AudioStreamWAV
 var _gulp: AudioStreamWAV
+var _baby = null
 
 
 func _ready() -> void:
@@ -75,6 +77,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_toggle_camera()
 			elif pad.button_index == JOY_BUTTON_LEFT_SHOULDER:
 				_roar_now()
+			elif pad.button_index == JOY_BUTTON_X:
+				_give_birth()
 		return
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -90,6 +94,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_toggle_camera()
 		elif key.keycode == KEY_K or key.physical_keycode == KEY_K:
 			_roar_now()
+		elif key.keycode == KEY_B or key.physical_keycode == KEY_B:
+			_give_birth()
 
 
 func _notification(what: int) -> void:
@@ -130,6 +136,9 @@ func die() -> void:
 	alive = false
 	velocity = Vector3.ZERO
 	_vy = 0.0
+	if _baby != null and is_instance_valid(_baby):
+		_baby.queue_free()
+		_baby = null
 
 
 func set_owns_screen(owns: bool) -> void:
@@ -148,6 +157,8 @@ func view_camera() -> Camera3D:
 
 
 func form_name() -> String:
+	if _baby != null and is_instance_valid(_baby):
+		return "T-Rex ve bebek"
 	return "T-Rex"
 
 
@@ -277,6 +288,25 @@ func _joy_axis(axis: JoyAxis) -> float:
 	return value
 
 
+func _give_birth() -> void:
+	if not alive:
+		return
+	if _baby != null and is_instance_valid(_baby):
+		return
+	var baby = BabyScript.new()
+	var back: Vector3 = global_transform.basis.z
+	var side: Vector3 = global_transform.basis.x
+	baby.position = Land.stand(global_position + back * 2.3 + side * 1.7)
+	baby.setup(self)
+	get_parent().add_child(baby)
+	_baby = baby
+	form_changed.emit(form_name())
+	_voice.stream = _gulp
+	_voice.pitch_scale = 1.55
+	_voice.volume_db = -1.0
+	_voice.play()
+
+
 func _roar_now() -> void:
 	_roar = 0.55
 	_voice.stream = _roar_call
@@ -396,7 +426,10 @@ func _on_mouth_area(area: Area3D) -> void:
 	if rel.z > -0.6:
 		return
 	if area.call("got_eaten") == true:
-		ate_fish.emit(area.global_position)
+		var at: Vector3 = area.global_position
+		ate_fish.emit(at)
+		if _baby != null and is_instance_valid(_baby):
+			_baby.eat_with(at)
 
 
 func _build_mouth() -> void:
