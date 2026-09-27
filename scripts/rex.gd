@@ -404,7 +404,7 @@ func _build_mouth() -> void:
 	_mouth.collision_layer = 0
 	_mouth.collision_mask = 1
 	_mouth_shape = SphereShape3D.new()
-	_mouth_shape.radius = 1.85
+	_mouth_shape.radius = 1.45
 	var col := CollisionShape3D.new()
 	col.shape = _mouth_shape
 	_mouth.add_child(col)
@@ -452,10 +452,17 @@ func _build_body() -> void:
 	var skin := _mat(Color(0.36, 0.48, 0.2), 0.55)
 	var dark := _mat(Color(0.2, 0.3, 0.12), 0.62)
 	var belly := _mat(Color(0.66, 0.6, 0.38), 0.5)
-	var tooth := _mat(Color(0.95, 0.93, 0.86), 0.3)
+	var tooth := _mat(Color(0.95, 0.93, 0.86), 0.28, true)
 	_body(self, 0.78, Vector3(0.95, 0.82, 1.65), Vector3(0.0, 1.9, 0.2), skin)
 	_body(self, 0.55, Vector3(0.72, 0.42, 1.25), Vector3(0.0, 1.5, 0.25), belly)
 	_place(self, _box(Vector3(0.18, 0.16, 1.5)), Vector3(0.0, 2.45, 0.15), Vector3.ZERO, Vector3.ONE, dark)
+	for i in 6:
+		var scute := CylinderMesh.new()
+		scute.top_radius = 0.0
+		scute.bottom_radius = 0.09
+		scute.height = 0.24
+		scute.radial_segments = 5
+		_place(self, scute, Vector3(0.0, 2.58, -0.5 + float(i) * 0.36), Vector3.ZERO, Vector3.ONE, dark)
 	_body(self, 0.42, Vector3(0.8, 0.85, 1.05), Vector3(0.0, 2.15, -1.05), skin)
 	_body(self, 0.52, Vector3(0.82, 0.7, 1.35), Vector3(0.0, 2.5, -2.15), skin)
 	_body(self, 0.28, Vector3(0.7, 0.55, 1.35), Vector3(0.0, 2.28, -3.05), skin)
@@ -498,15 +505,15 @@ func _add_leg(side: float, skin: Material, dark: Material) -> void:
 
 
 func _eye(parent: Node3D, pos: Vector3) -> void:
-	_body(parent, 0.09, Vector3.ONE, pos, _mat(Color(0.95, 0.95, 0.9), 0.25))
-	_body(parent, 0.045, Vector3.ONE, pos + Vector3(0.0, 0.0, -0.06), _mat(Color(0.08, 0.06, 0.04), 0.4))
+	_body(parent, 0.09, Vector3.ONE, pos, _mat(Color(0.95, 0.95, 0.9), 0.2, true))
+	_body(parent, 0.045, Vector3.ONE, pos + Vector3(0.0, 0.0, -0.06), _mat(Color(0.08, 0.06, 0.04), 0.35, true))
 
 
 func _body(parent: Node3D, radius: float, scl: Vector3, pos: Vector3, mat: Material) -> void:
 	var mesh := SphereMesh.new()
 	mesh.radius = radius
 	mesh.height = radius * 2.0
-	mesh.radial_segments = 16
+	mesh.radial_segments = 22
 	mesh.rings = 10
 	_place(parent, mesh, pos, Vector3.ZERO, scl, mat)
 
@@ -528,8 +535,17 @@ func _place(parent: Node3D, mesh: Mesh, pos: Vector3, rot: Vector3, scl: Vector3
 	parent.add_child(n)
 
 
-func _mat(color: Color, rough: float) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = rough
+const SkinShader := preload("res://assets/shaders/skin.gdshader")
+
+func _mat(color: Color, rough: float, flat: bool = false) -> Material:
+	if flat:
+		var plain := StandardMaterial3D.new()
+		plain.albedo_color = color
+		plain.roughness = rough
+		plain.metallic_specular = 0.45
+		return plain
+	var mat := ShaderMaterial.new()
+	mat.shader = SkinShader
+	mat.set_shader_parameter("albedo", color)
+	mat.set_shader_parameter("roughness_amt", rough)
 	return mat

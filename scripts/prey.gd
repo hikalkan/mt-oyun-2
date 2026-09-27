@@ -3,6 +3,7 @@ extends Area3D
 enum Kind { TINY, DUCK, HORN }
 
 const Land := preload("res://scripts/land_bounds.gd")
+const SkinShader := preload("res://assets/shaders/skin.gdshader")
 
 var kind := Kind.TINY
 var cruise_speed := 3.4
@@ -21,13 +22,13 @@ func setup(next_kind: Kind) -> void:
 	match kind:
 		Kind.TINY:
 			cruise_speed = 4.4
-			flee_speed = 13.2
+			flee_speed = 14.6
 		Kind.DUCK:
-			cruise_speed = 3.1
-			flee_speed = 10.4
+			cruise_speed = 3.4
+			flee_speed = 12.4
 		_:
-			cruise_speed = 2.2
-			flee_speed = 7.4
+			cruise_speed = 2.4
+			flee_speed = 9.2
 
 
 func _ready() -> void:
@@ -106,7 +107,7 @@ func got_eaten() -> bool:
 func _respawn() -> void:
 	var hunter = _nearest_player()
 	if hunter != null:
-		global_position = Land.nearby(hunter.global_position, 30.0, 85.0)
+		global_position = Land.nearby(hunter.global_position, 46.0, 120.0)
 	else:
 		global_position = Land.stand(Vector3(randf_range(-90.0, 90.0), 0.0, randf_range(-90.0, 90.0)))
 	_bob.scale = Vector3.ONE
@@ -222,8 +223,8 @@ func _add_leg(parent: Node3D, side: float, hip_y: float, mat: Material) -> void:
 
 
 func _eye(parent: Node3D, pos: Vector3) -> void:
-	_body(parent, 0.045, Vector3.ONE, pos, _mat(Color(0.95, 0.95, 0.92)))
-	_body(parent, 0.022, Vector3.ONE, pos + Vector3(0.0, 0.0, -0.03), _mat(Color(0.06, 0.05, 0.04)))
+	_body(parent, 0.045, Vector3.ONE, pos, _plain(Color(0.95, 0.95, 0.92), 0.2))
+	_body(parent, 0.022, Vector3.ONE, pos + Vector3(0.0, 0.0, -0.03), _plain(Color(0.06, 0.05, 0.04), 0.35))
 
 
 func _body(parent: Node3D, radius: float, scl: Vector3, pos: Vector3, mat: Material) -> void:
@@ -251,8 +252,17 @@ func _place(parent: Node3D, mesh: Mesh, pos: Vector3, rot: Vector3, scl: Vector3
 	parent.add_child(n)
 
 
-func _mat(color: Color) -> StandardMaterial3D:
+func _mat(color: Color) -> Material:
+	var mat := ShaderMaterial.new()
+	mat.shader = SkinShader
+	mat.set_shader_parameter("albedo", color)
+	mat.set_shader_parameter("roughness_amt", 0.52)
+	return mat
+
+
+func _plain(color: Color, rough: float) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
-	mat.roughness = 0.55
+	mat.roughness = rough
+	mat.metallic_specular = 0.4
 	return mat

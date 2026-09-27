@@ -1,23 +1,10 @@
 shader_type spatial;
-render_mode cull_disabled, diffuse_burley, specular_disabled;
+render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
+
+#include "res://assets/shaders/noise.gdshaderinc"
 
 varying vec3 wpos;
 varying float slope;
-
-float hash(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-}
-
-float noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	float a = hash(i);
-	float b = hash(i + vec2(1.0, 0.0));
-	float c = hash(i + vec2(0.0, 1.0));
-	float d = hash(i + vec2(1.0, 1.0));
-	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
 
 float ground_h(vec2 xz) {
 	return sin(xz.x * 0.02) * 2.2 + cos(xz.y * 0.017) * 1.8 + sin((xz.x + xz.y) * 0.008) * 3.0;
@@ -41,17 +28,28 @@ void vertex() {
 }
 
 void fragment() {
-	float patch = noise(wpos.xz * 0.035);
-	float grain = noise(wpos.xz * 0.32);
-	vec3 low = vec3(0.2, 0.4, 0.13);
-	vec3 high = vec3(0.46, 0.66, 0.26);
-	vec3 dirt = vec3(0.4, 0.32, 0.16);
-	vec3 grass = mix(low, high, patch);
-	grass = mix(grass, dirt, smoothstep(0.04, 0.16, slope));
+	float macro = fbm(wpos.xz * 0.01);
+	float patch = fbm(wpos.xz * 0.045);
+	float grain = noise(wpos.xz * 0.55);
+	vec3 lush = vec3(0.16, 0.32, 0.12);
+	vec3 fresh = vec3(0.28, 0.42, 0.16);
+	vec3 dry = vec3(0.4, 0.38, 0.18);
+	vec3 soil = vec3(0.34, 0.26, 0.15);
+	vec3 grass = mix(lush, fresh, patch);
+	grass = mix(grass, dry, smoothstep(0.48, 0.78, macro));
+	grass = mix(grass, soil, smoothstep(0.04, 0.2, slope));
+	float pebbles = smoothstep(0.74, 0.9, noise(wpos.xz * 1.7));
+	grass = mix(grass, vec3(0.42, 0.4, 0.34), pebbles * 0.4);
 	float bank = abs(wpos.z - river_z(wpos.x));
 	float wet = smoothstep(12.0, 7.2, bank);
-	grass = mix(grass, vec3(0.24, 0.3, 0.16), wet * 0.7);
-	grass *= 0.9 + grain * 0.18;
+	grass = mix(grass, vec3(0.2, 0.24, 0.14), wet * 0.75);
+	grass *= 0.9 + grain * 0.16;
+	float e = 0.35;
+	float h0 = noise(wpos.xz * 2.2);
+	float hx = noise((wpos.xz + vec2(e, 0.0)) * 2.2) - h0;
+	float hz = noise((wpos.xz + vec2(0.0, e)) * 2.2) - h0;
+	NORMAL = normalize(NORMAL + mat3(VIEW_MATRIX) * vec3(hx, 0.0, hz) * 1.2);
 	ALBEDO = grass;
-	ROUGHNESS = 0.96;
+	ROUGHNESS = mix(0.94, 0.62, wet * 0.45);
+	SPECULAR = wet * 0.12;
 }

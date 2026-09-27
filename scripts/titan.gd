@@ -1,6 +1,7 @@
 extends Area3D
 
 const Land := preload("res://scripts/land_bounds.gd")
+const SkinShader := preload("res://assets/shaders/skin.gdshader")
 const AGGRO_DIST := 11.0
 const LEASH_DIST := 15.0
 const BITE_REACH := 4.0
@@ -162,7 +163,7 @@ func _build() -> void:
 	var skin := _mat(Color(0.32, 0.16, 0.14))
 	var dark := _mat(Color(0.14, 0.07, 0.07))
 	var belly := _mat(Color(0.55, 0.4, 0.32))
-	var tooth := _mat(Color(0.94, 0.9, 0.8))
+	var tooth := _plain(Color(0.94, 0.9, 0.8))
 	_body(self, 1.35, Vector3(1.15, 1.05, 2.15), Vector3(0.0, 3.4, 0.4), skin)
 	_body(self, 0.9, Vector3(0.85, 0.45, 1.6), Vector3(0.0, 2.5, 0.5), belly)
 	_place(self, _box(Vector3(0.35, 0.28, 3.2)), Vector3(0.0, 4.7, 0.2), Vector3.ZERO, Vector3.ONE, dark)
@@ -203,8 +204,8 @@ func _add_leg(side: float, skin: Material, dark: Material) -> void:
 
 
 func _eye(pos: Vector3) -> void:
-	_body(self, 0.16, Vector3.ONE, pos, _mat(Color(0.9, 0.1, 0.08)))
-	_body(self, 0.07, Vector3.ONE, pos + Vector3(0.0, 0.0, -0.1), _mat(Color(0.05, 0.02, 0.02)))
+	_body(self, 0.16, Vector3.ONE, pos, _plain(Color(0.72, 0.1, 0.08)))
+	_body(self, 0.07, Vector3.ONE, pos + Vector3(0.0, 0.0, -0.1), _plain(Color(0.05, 0.02, 0.02)))
 
 
 func _body(parent: Node3D, radius: float, scl: Vector3, pos: Vector3, mat: Material) -> void:
@@ -232,8 +233,17 @@ func _place(parent: Node3D, mesh: Mesh, pos: Vector3, rot: Vector3, scl: Vector3
 	parent.add_child(n)
 
 
-func _mat(color: Color) -> StandardMaterial3D:
+func _mat(color: Color) -> Material:
+	var mat := ShaderMaterial.new()
+	mat.shader = SkinShader
+	mat.set_shader_parameter("albedo", color)
+	mat.set_shader_parameter("roughness_amt", 0.58)
+	return mat
+
+
+func _plain(color: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
-	mat.roughness = 0.58
+	mat.roughness = 0.32
+	mat.metallic_specular = 0.5
 	return mat

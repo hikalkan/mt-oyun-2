@@ -15,9 +15,9 @@ const LEVELS := {
 	"zor": {"goal": 25, "hunger": 16.0, "bite": 7.0, "fish": 72, "sharks": 4, "dogs": 4, "mean": 6, "fishers": 5, "hook": -32.0, "reach": 18.0, "title": "Zor"},
 }
 const LAND_LEVELS := {
-	"kolay": {"goal": 8, "hunger": 48.0, "bite": 18.0, "prey": 70, "titans": 1, "title": "Kolay"},
-	"orta": {"goal": 15, "hunger": 30.0, "bite": 12.0, "prey": 50, "titans": 2, "title": "Orta"},
-	"zor": {"goal": 25, "hunger": 16.0, "bite": 7.0, "prey": 36, "titans": 3, "title": "Zor"},
+	"kolay": {"goal": 24, "hunger": 64.0, "bite": 14.0, "prey": 40, "titans": 1, "title": "Kolay"},
+	"orta": {"goal": 42, "hunger": 46.0, "bite": 11.0, "prey": 32, "titans": 2, "title": "Orta"},
+	"zor": {"goal": 64, "hunger": 34.0, "bite": 8.0, "prey": 26, "titans": 3, "title": "Zor"},
 }
 
 @onready var player = $Player
@@ -254,23 +254,33 @@ func _hide_sea() -> void:
 func _paint_land_sky() -> void:
 	var sky_mat := _env.sky.sky_material as ProceduralSkyMaterial
 	if sky_mat:
-		sky_mat.sky_top_color = Color(0.28, 0.55, 0.92)
-		sky_mat.sky_horizon_color = Color(0.95, 0.86, 0.62)
-		sky_mat.ground_horizon_color = Color(0.45, 0.58, 0.28)
-		sky_mat.ground_bottom_color = Color(0.22, 0.32, 0.12)
-	_env.fog_density = 0.0016
-	_env.fog_light_color = Color(0.78, 0.84, 0.68)
-	_env.ambient_light_color = Color(0.72, 0.76, 0.6)
-	_env.ambient_light_energy = 0.95
+		sky_mat.sky_top_color = Color(0.2, 0.4, 0.74)
+		sky_mat.sky_horizon_color = Color(0.76, 0.82, 0.84)
+		sky_mat.ground_horizon_color = Color(0.4, 0.46, 0.3)
+		sky_mat.ground_bottom_color = Color(0.16, 0.2, 0.12)
+		sky_mat.sun_angle_max = 16.0
+	_env.fog_density = 0.0034
+	_env.fog_light_color = Color(0.7, 0.76, 0.68)
+	_env.fog_aerial_perspective = 0.62
+	_env.ambient_light_color = Color(0.58, 0.64, 0.54)
+	_env.ambient_light_energy = 0.52
+	_env.tonemap_exposure = 1.0
+	_env.glow_intensity = 0.06
+	_env.glow_strength = 0.28
+	_env.glow_bloom = 0.02
 	var sun := get_node_or_null("Sun") as DirectionalLight3D
 	if sun:
-		sun.light_color = Color(1.0, 0.94, 0.78)
-		sun.light_energy = 1.75
-		sun.rotation_degrees = Vector3(-52, 28, 0)
+		sun.light_color = Color(1.0, 0.93, 0.8)
+		sun.light_energy = 1.9
+		sun.rotation_degrees = Vector3(-48, 32, 0)
+		sun.shadow_enabled = true
+		sun.directional_shadow_max_distance = 220.0
+		sun.directional_shadow_blend_splits = true
+		sun.shadow_blur = 1.15
 	var fill := get_node_or_null("Fill") as DirectionalLight3D
 	if fill:
-		fill.light_color = Color(0.62, 0.7, 0.42)
-		fill.light_energy = 0.34
+		fill.light_color = Color(0.52, 0.6, 0.46)
+		fill.light_energy = 0.2
 
 
 func _build_grass() -> void:
@@ -334,9 +344,10 @@ func _river_vert(st: SurfaceTool, point: Vector3, uv: Vector2) -> void:
 
 
 func _build_reeds() -> void:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.18, 0.52, 0.26)
-	mat.roughness = 0.7
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/foliage.gdshader")
+	mat.set_shader_parameter("albedo", Color(0.18, 0.46, 0.22))
+	mat.set_shader_parameter("roughness_amt", 0.7)
 	var x := -Land.HALF + 10.0
 	var n := 0
 	while x < Land.HALF - 10.0:
@@ -401,8 +412,8 @@ func _spawn_second_rex() -> void:
 
 
 func _spawn_prey(count: int) -> void:
-	var close_count := mini(18, count)
-	var mid_count := mini(int(float(count) * 0.7), count)
+	var close_count := mini(6, count)
+	var mid_count := mini(int(float(count) * 0.55), count)
 	for i in count:
 		var prey = PreyScript.new()
 		var kind := PreyScript.Kind.TINY
@@ -416,12 +427,12 @@ func _spawn_prey(count: int) -> void:
 		var pos: Vector3
 		if i < close_count:
 			var ang := TAU * float(i) / float(close_count)
-			pos = around + Vector3(cos(ang), 0.0, sin(ang)) * randf_range(10.0, 22.0)
+			pos = around + Vector3(cos(ang), 0.0, sin(ang)) * randf_range(18.0, 36.0)
 			pos = Land.stand(pos)
 		elif i < mid_count:
-			pos = Land.nearby(around, 18.0, 55.0)
+			pos = Land.nearby(around, 28.0, 70.0)
 		else:
-			pos = Land.nearby(around, 48.0, 120.0)
+			pos = Land.nearby(around, 64.0, 140.0)
 		prey.position = pos
 		add_child(prey)
 

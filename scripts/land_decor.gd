@@ -1,6 +1,9 @@
 extends Node3D
 
 const Land := preload("res://scripts/land_bounds.gd")
+const BarkShader := preload("res://assets/shaders/bark.gdshader")
+const LeafShader := preload("res://assets/shaders/foliage.gdshader")
+const RockShader := preload("res://assets/shaders/rock.gdshader")
 
 var _trees: Array[Node3D] = []
 
@@ -47,7 +50,7 @@ func _bushes(rng: RandomNumberGenerator) -> void:
 
 
 func _rocks(rng: RandomNumberGenerator) -> void:
-	var mat := _mat(Color(0.45, 0.44, 0.4), 0.9)
+	var mat := _shade(RockShader, Color(0.42, 0.4, 0.36), 0.92)
 	for i in 24:
 		var at := _spot(rng, 12.0)
 		var rock := MeshInstance3D.new()
@@ -91,28 +94,35 @@ func _tree(at: Vector3, height: float, leaf: Color, rng: RandomNumberGenerator) 
 	mesh.top_radius = rng.randf_range(0.18, 0.32)
 	mesh.bottom_radius = mesh.top_radius * 1.45
 	mesh.height = height * 0.62
-	mesh.radial_segments = 8
+	mesh.radial_segments = 10
 	trunk.mesh = mesh
 	trunk.position = Vector3(0.0, mesh.height * 0.5, 0.0)
-	trunk.material_override = _mat(Color(0.38, 0.26, 0.12), 0.85)
+	trunk.material_override = _shade(BarkShader, Color(0.34, 0.22, 0.11), 0.88)
 	pivot.add_child(trunk)
+	var leaf_mat := _shade(LeafShader, leaf, 0.74)
 	var crown := MeshInstance3D.new()
 	var ball := SphereMesh.new()
 	ball.radius = rng.randf_range(1.3, 2.2)
 	ball.height = ball.radius * 2.1
+	ball.radial_segments = 16
+	ball.rings = 10
 	crown.mesh = ball
 	crown.position = Vector3(0.0, height * 0.72, 0.0)
 	crown.scale = Vector3(1.0, 1.15, 1.0)
-	crown.material_override = _mat(leaf, 0.7)
+	crown.material_override = leaf_mat
 	pivot.add_child(crown)
-	var puff := MeshInstance3D.new()
-	var puff_mesh := SphereMesh.new()
-	puff_mesh.radius = ball.radius * 0.72
-	puff_mesh.height = puff_mesh.radius * 2.0
-	puff.mesh = puff_mesh
-	puff.position = Vector3(rng.randf_range(-0.6, 0.6), height * 0.84, rng.randf_range(-0.5, 0.5))
-	puff.material_override = _mat(leaf.lightened(0.12), 0.65)
-	pivot.add_child(puff)
+	for k in 3:
+		var puff := MeshInstance3D.new()
+		var puff_mesh := SphereMesh.new()
+		puff_mesh.radius = ball.radius * rng.randf_range(0.45, 0.72)
+		puff_mesh.height = puff_mesh.radius * 2.0
+		puff_mesh.radial_segments = 12
+		puff_mesh.rings = 8
+		puff.mesh = puff_mesh
+		puff.position = Vector3(rng.randf_range(-1.15, 1.15), height * rng.randf_range(0.52, 0.9), rng.randf_range(-1.0, 1.0))
+		var tint := leaf.darkened(0.1) if k == 1 else leaf.lightened(0.06)
+		puff.material_override = _shade(LeafShader, tint, 0.7)
+		pivot.add_child(puff)
 	return pivot
 
 
@@ -120,7 +130,7 @@ func _bush(at: Vector3, color: Color, rng: RandomNumberGenerator) -> void:
 	var root := Node3D.new()
 	root.position = at
 	add_child(root)
-	var mat := _mat(color, 0.75)
+	var mat := _shade(LeafShader, color, 0.72)
 	for i in 4:
 		var ball := MeshInstance3D.new()
 		var mesh := SphereMesh.new()
@@ -137,7 +147,7 @@ func _fern(at: Vector3, rng: RandomNumberGenerator) -> void:
 	root.position = at
 	root.rotation.y = rng.randf() * TAU
 	add_child(root)
-	var mat := _mat(Color(0.18, 0.55, 0.22), 0.6)
+	var mat := _shade(LeafShader, Color(0.16, 0.42, 0.18), 0.66)
 	for i in 5:
 		var leaf := MeshInstance3D.new()
 		var mesh := BoxMesh.new()
@@ -149,8 +159,9 @@ func _fern(at: Vector3, rng: RandomNumberGenerator) -> void:
 		root.add_child(leaf)
 
 
-func _mat(color: Color, rough: float) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = rough
+func _shade(shader: Shader, color: Color, rough: float) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	mat.set_shader_parameter("albedo", color)
+	mat.set_shader_parameter("roughness_amt", rough)
 	return mat
