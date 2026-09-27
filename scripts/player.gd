@@ -6,7 +6,7 @@ signal camera_changed(mode_label: String)
 signal got_hurt(left: float)
 signal got_downed
 
-enum Form { WHALE, SHARK }
+enum Form { WHALE, SHARK, MEGALODON }
 
 const Bounds := preload("res://scripts/sea_bounds.gd")
 var pad_id := -1
@@ -32,6 +32,7 @@ var _bank := 0.0
 var _last_yaw := 0.0
 var _whale_fluke: Node3D
 var _shark_tail: Node3D
+var _mega_tail: Node3D
 var _jets: Array[MeshInstance3D] = []
 var _spout: CPUParticles3D
 var _mouth: Area3D
@@ -39,8 +40,10 @@ var _mouth_shape: SphereShape3D
 var _pitch: Node3D
 var _whale: Node3D
 var _shark: Node3D
+var _mega: Node3D
 var _whale_hood: MeshInstance3D
 var _shark_hood: MeshInstance3D
+var _mega_hood: MeshInstance3D
 var _chase: Camera3D
 var _fps: Camera3D
 var _voice: AudioStreamPlayer3D
@@ -65,6 +68,7 @@ func _ready() -> void:
 	add_child(_pitch)
 	_build_whale()
 	_build_shark()
+	_build_megalodon()
 	_build_cameras()
 	_build_mouth()
 	_build_spout()
@@ -124,7 +128,9 @@ func heal(amount: float) -> void:
 func hurt(amount: float, from_pos: Vector3) -> bool:
 	if not alive or _hurt_lock > 0.0:
 		return false
-	if form == Form.WHALE:
+	if form == Form.MEGALODON:
+		amount *= 0.4
+	elif form == Form.WHALE:
 		amount *= 0.65
 	health = maxf(health - amount, 0.0)
 	_hurt_lock = 0.8
@@ -273,6 +279,10 @@ func _speak() -> void:
 		_voice.stream = _whale_calls[randi() % _whale_calls.size()]
 		_voice.pitch_scale = randf_range(0.97, 1.03)
 		_voice.volume_db = 4.0
+	elif form == Form.MEGALODON:
+		_voice.stream = _shark_calls[randi() % _shark_calls.size()]
+		_voice.pitch_scale = randf_range(0.46, 0.56)
+		_voice.volume_db = 8.0
 	else:
 		_voice.stream = _shark_calls[randi() % _shark_calls.size()]
 		_voice.pitch_scale = randf_range(0.94, 1.06)
@@ -284,7 +294,12 @@ func _switch_form() -> void:
 	if _switch_lock > 0.0:
 		return
 	_switch_lock = 0.35
-	form = Form.SHARK if form == Form.WHALE else Form.WHALE
+	if form == Form.WHALE:
+		form = Form.SHARK
+	elif form == Form.SHARK:
+		form = Form.MEGALODON
+	else:
+		form = Form.WHALE
 	_apply_form()
 	form_changed.emit(form_name())
 
@@ -300,13 +315,16 @@ func _show_camera() -> void:
 	_fps.current = owns_screen and fps_mode
 	_whale_hood.visible = fps_mode and form == Form.WHALE
 	_shark_hood.visible = fps_mode and form == Form.SHARK
+	if _mega_hood:
+		_mega_hood.visible = fps_mode and form == Form.MEGALODON
 
 
 func _apply_form() -> void:
-	var whale := form == Form.WHALE
-	_whale.visible = whale
-	_shark.visible = not whale
-	if whale:
+	_whale.visible = form == Form.WHALE
+	_shark.visible = form == Form.SHARK
+	if _mega:
+		_mega.visible = form == Form.MEGALODON
+	if form == Form.WHALE:
 		swim_speed = 11.0
 		accel = 7.5
 		drag = 3.5
@@ -315,6 +333,14 @@ func _apply_form() -> void:
 		_chase.position = Vector3(0.0, 2.4, 9.0)
 		_fps.position = Vector3(0.0, 0.28, -2.05)
 		_spout.position = Vector3(0.0, 0.85, -0.2)
+	elif form == Form.MEGALODON:
+		swim_speed = 32.0
+		accel = 9.0
+		drag = 4.0
+		_mouth.position = Vector3(0.0, 0.2, -11.2)
+		_mouth_shape.radius = 5.2
+		_chase.position = Vector3(0.0, 14.0, 48.0)
+		_fps.position = Vector3(0.0, 0.6, -10.8)
 	else:
 		swim_speed = 20.0
 		accel = 16.0
@@ -330,6 +356,8 @@ func _apply_form() -> void:
 func _seat_cameras() -> void:
 	if form == Form.WHALE:
 		_chase.position = Vector3(0.0, 2.4, 9.0)
+	elif form == Form.MEGALODON:
+		_chase.position = Vector3(0.0, 14.0, 48.0)
 	else:
 		_chase.position = Vector3(0.0, 1.5, 5.6)
 	var chase_pos := Bounds.above_floor(_chase.global_position, 3.4)
@@ -342,7 +370,8 @@ func _seat_cameras() -> void:
 
 
 func _aim_chase() -> void:
-	var focus := _pitch.to_global(Vector3(0.0, 0.2, -1.0))
+	var focus_at := Vector3(0.0, 1.4, -4.0) if form == Form.MEGALODON else Vector3(0.0, 0.2, -1.0)
+	var focus := _pitch.to_global(focus_at)
 	if _chase.global_position.distance_to(focus) > 0.3:
 		_chase.look_at(focus, Vector3.UP)
 
@@ -361,6 +390,11 @@ func _animate() -> void:
 		_shark.rotation.x = sin(_time * (2.4 if moving else 0.8)) * (0.04 if moving else 0.015)
 	if _shark_tail:
 		_shark_tail.rotation.y = sin(_time * (5.5 if moving else 2.4)) * (0.45 if moving else 0.18)
+	if _mega:
+		_mega.rotation.z = lerpf(_mega.rotation.z, -_bank * 0.35, 0.12)
+		_mega.rotation.x = sin(_time * (1.3 if moving else 0.45)) * (0.03 if moving else 0.01)
+	if _mega_tail:
+		_mega_tail.rotation.y = sin(_time * (2.4 if moving else 1.1)) * (0.28 if moving else 0.1)
 	var spray := form == Form.WHALE and _q_held()
 	_spout.emitting = spray
 	for i in _jets.size():
@@ -387,13 +421,15 @@ func _on_mouth_area(area: Area3D) -> void:
 		return
 	if area.call("got_eaten") == true:
 		_voice.stream = _bites[randi() % _bites.size()]
-		_voice.pitch_scale = randf_range(0.9, 1.08)
+		_voice.pitch_scale = randf_range(0.55, 0.68) if form == Form.MEGALODON else randf_range(0.9, 1.08)
 		_voice.volume_db = -2.0
 		_voice.play()
 		ate_fish.emit(area.global_position)
 
 
 func form_name() -> String:
+	if form == Form.MEGALODON:
+		return "Megalodon"
 	if form == Form.WHALE:
 		return "Mavi balina"
 	return "Köpekbalığı"
@@ -406,14 +442,22 @@ func camera_name() -> String:
 
 
 func is_shark() -> bool:
-	return form == Form.SHARK
+	return form == Form.SHARK or form == Form.MEGALODON
+
+
+func is_megalodon() -> bool:
+	return form == Form.MEGALODON
 
 
 func scare_radius() -> float:
+	if form == Form.MEGALODON:
+		return 48.0
 	return 6.0 if is_shark() else 4.2
 
 
 func scare_power() -> float:
+	if form == Form.MEGALODON:
+		return 9.0
 	return 2.4 if is_shark() else 1.2
 
 
@@ -475,19 +519,21 @@ func _build_cameras() -> void:
 	_chase = Camera3D.new()
 	_chase.fov = 58.0
 	_chase.near = 0.15
-	_chase.far = 1400.0
+	_chase.far = 4200.0
 	_chase.cull_mask = 0xfffff & ~hood_layer
 	_pitch.add_child(_chase)
 	_fps = Camera3D.new()
 	_fps.fov = 72.0
 	_fps.near = 0.04
-	_fps.far = 1400.0
+	_fps.far = 4200.0
 	_fps.cull_mask = 1 | hood_layer
 	_pitch.add_child(_fps)
 	_whale_hood = _hood(Color(0.16, 0.4, 0.78), Vector3(0.9, 0.14, 0.35), Vector3(0, -0.42, -1.35))
 	_shark_hood = _hood(Color(0.45, 0.48, 0.52), Vector3(0.28, 0.08, 0.55), Vector3(0, -0.28, -0.95))
 	_fps.add_child(_whale_hood)
 	_fps.add_child(_shark_hood)
+	_mega_hood = _hood(Color(0.16, 0.17, 0.2), Vector3(1.15, 0.28, 2.2), Vector3(0, -0.35, -1.5))
+	_fps.add_child(_mega_hood)
 
 
 func _hood(color: Color, scl: Vector3, pos: Vector3) -> MeshInstance3D:
@@ -552,6 +598,37 @@ func _build_shark() -> void:
 	for i in 3:
 		var gill := _box(Vector3(0.015, 0.12, 0.04))
 		_place(_shark, gill, Vector3(0.22, 0.0, -0.15 - float(i) * 0.08), Vector3.ZERO, Vector3.ONE, dark)
+
+
+func _build_megalodon() -> void:
+	_mega = Node3D.new()
+	_mega.scale = Vector3(8.0, 8.0, 8.0)
+	_mega.visible = false
+	_pitch.add_child(_mega)
+	var gray := _mat(Color(0.1, 0.11, 0.14), 0.34, false)
+	var dark := _mat(Color(0.04, 0.05, 0.07), 0.42, false)
+	var belly := _mat(Color(0.72, 0.7, 0.66), 0.46, false)
+	var tooth := _mat(Color(0.95, 0.93, 0.86), 0.25, false)
+	_body(_mega, 0.55, Vector3(0.95, 0.78, 2.15), Vector3(0, 0, 0.05), gray)
+	_body(_mega, 0.36, Vector3(0.75, 0.42, 1.45), Vector3(0, -0.16, 0.1), belly)
+	var nose := CylinderMesh.new()
+	nose.top_radius = 0.0
+	nose.bottom_radius = 0.36
+	nose.height = 0.95
+	nose.radial_segments = 16
+	_place(_mega, nose, Vector3(0, 0, -1.2), Vector3(deg_to_rad(-90.0), 0, 0), Vector3.ONE, gray)
+	_place(_mega, _box(Vector3(0.1, 0.85, 0.36)), Vector3(0, 0.55, 0.05), Vector3.ZERO, Vector3.ONE, dark)
+	_place(_mega, _box(Vector3(0.1, 0.42, 0.28)), Vector3(-0.5, -0.16, 0.12), Vector3(0, 0, 0.55), Vector3.ONE, dark)
+	_place(_mega, _box(Vector3(0.1, 0.42, 0.28)), Vector3(0.5, -0.16, 0.12), Vector3(0, 0, -0.55), Vector3.ONE, dark)
+	for i in 6:
+		_place(_mega, _box(Vector3(0.04, 0.18, 0.035)), Vector3(-0.14 + float(i) * 0.056, -0.22, -1.55), Vector3.ZERO, Vector3.ONE, tooth)
+	_mega_tail = Node3D.new()
+	_mega_tail.position = Vector3(0, 0, 1.05)
+	_mega.add_child(_mega_tail)
+	_place(_mega_tail, _box(Vector3(0.1, 0.85, 0.36)), Vector3(0, 0.28, 0.38), Vector3(0.4, 0, 0), Vector3.ONE, gray)
+	_place(_mega_tail, _box(Vector3(0.08, 0.4, 0.24)), Vector3(0, -0.12, 0.3), Vector3(-0.25, 0, 0), Vector3.ONE, gray)
+	_eye(_mega, Vector3(0.26, 0.1, -0.7))
+	_eye(_mega, Vector3(-0.26, 0.1, -0.7))
 
 
 func _eye(parent: Node3D, pos: Vector3) -> void:

@@ -1,6 +1,6 @@
 extends Object
 
-const HALF := 500.0
+const HALF := 1581.0
 const SURFACE_Y := 0.0
 const FLOOR_Y := -96.0
 const CEILING_Y := -1.4

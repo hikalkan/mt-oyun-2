@@ -65,6 +65,24 @@ var _blink_wait := 2.6
 var _step_mark := 0.0
 var _leg_home: Array[float] = []
 var _eyes: Array[MeshInstance3D] = []
+var _diplodocus := false
+var _bulk := 1.0
+var _switch_lock := 0.0
+const DIPLO_BIG := 5.0
+var _rex_root: Node3D
+var _diplo_root: Node3D
+var _diplo_neck: Node3D
+var _diplo_hood: MeshInstance3D
+var _rex_legs: Array[Node3D] = []
+var _rex_leg_home: Array[float] = []
+var _rex_eyes: Array[MeshInstance3D] = []
+var _diplo_legs: Array[Node3D] = []
+var _diplo_leg_home: Array[float] = []
+var _diplo_eyes: Array[MeshInstance3D] = []
+var _rex_tail: Node3D
+var _rex_jaw: Node3D
+var _diplo_tail: Node3D
+var _diplo_jaw: Node3D
 const MEALS_TO_HUNT := 6
 
 
@@ -76,8 +94,10 @@ func _ready() -> void:
 	_avatar = Node3D.new()
 	add_child(_avatar)
 	_build_body()
+	_build_diplo()
 	_build_cameras()
 	_build_mouth()
+	_apply_dino()
 	_show_camera()
 	_voice = AudioStreamPlayer3D.new()
 	_voice.unit_size = 18.0
@@ -100,6 +120,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_roar_now()
 			elif pad.button_index == JOY_BUTTON_X:
 				_give_birth()
+			elif pad.button_index == JOY_BUTTON_RIGHT_SHOULDER:
+				_switch_dino()
 		return
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -117,6 +139,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_roar_now()
 		elif key.keycode == KEY_B or key.physical_keycode == KEY_B:
 			_give_birth()
+		elif key.keycode == KEY_M or key.physical_keycode == KEY_M:
+			_switch_dino()
 
 
 func _notification(what: int) -> void:
@@ -179,7 +203,9 @@ func view_camera() -> Camera3D:
 
 
 func form_name() -> String:
-	var name := "Kocaman T-Rex" if can_eat_big() else "T-Rex"
+	var name := "Dev Diplodocus" if _diplodocus else "T-Rex"
+	if can_eat_big():
+		name = "Kocaman " + name
 	var babies := _live_babies()
 	if babies.size() == 1:
 		return name + " ve bebek"
@@ -199,15 +225,27 @@ func is_shark() -> bool:
 
 
 func scare_radius() -> float:
-	return 16.0 * _grown
+	return 16.0 * _grown * (4.0 if _diplodocus else 1.0)
 
 
 func scare_power() -> float:
-	return 3.2 * _grown
+	return 3.2 * _grown * (2.0 if _diplodocus else 1.0)
 
 
 func body_size() -> float:
 	return _grown
+
+
+func follow_back(row: int) -> float:
+	if _diplodocus:
+		return (8.8 + float(row) * 1.2) * _bulk * _grown
+	return (3.6 + float(row) * 2.3) * _grown
+
+
+func follow_side() -> float:
+	if _diplodocus:
+		return 0.8 * _bulk * _grown
+	return 1.7 * _grown
 
 
 func can_eat_big() -> bool:
@@ -218,7 +256,7 @@ func grow_from_food(big: bool = false) -> void:
 	var was_big := can_eat_big()
 	_meals += 4 if big else 1
 	_grown = minf(1.0 + float(_meals) * 0.1, 2.1)
-	run_speed = 16.0 + (_grown - 1.0) * 4.0
+	_refresh_speed()
 	if _grow_tween:
 		_grow_tween.kill()
 	_grow_tween = create_tween()
@@ -239,6 +277,8 @@ func _physics_process(delta: float) -> void:
 	_time += delta
 	if _hurt_lock > 0.0:
 		_hurt_lock -= delta
+	if _switch_lock > 0.0:
+		_switch_lock -= delta
 	if _roar > 0.0:
 		_roar -= delta
 	rotation.y = yaw
@@ -259,14 +299,14 @@ func _physics_process(delta: float) -> void:
 		horiz = horiz.move_toward(Vector3.ZERO, drag * delta)
 	var jumping := _jump_edge()
 	if _grounded and jumping:
-		_vy = 10.5 + (_grown - 1.0) * 3.0
+		_vy = (16.0 if _diplodocus else 10.5) + (_grown - 1.0) * 3.0
 		_grounded = false
 	else:
 		var gravity := 23.0 if _vy > 0.0 else 36.0
 		_vy -= gravity * delta
 	var pos := global_position
 	var next := pos + Vector3(horiz.x, 0.0, horiz.z) * delta
-	next = Land.clamp_xz(next, 4.0)
+	next = Land.clamp_xz(next, 6.5 * _bulk * _grown)
 	if not is_equal_approx(next.x, pos.x + horiz.x * delta):
 		horiz.x = 0.0
 	if not is_equal_approx(next.z, pos.z + horiz.z * delta):
@@ -275,9 +315,9 @@ func _physics_process(delta: float) -> void:
 	next.y = pos.y + _vy * delta
 	if next.y <= floor_y:
 		if not _grounded and _vy < -7.0:
-			_dip = 0.14 * _grown
+			_dip = 0.14 * _grown * _bulk
 			if not Land.in_river(next.x, next.z):
-				Dust.puff(get_parent(), Vector3(next.x, floor_y + 0.1, next.z), 1.4)
+				Dust.puff(get_parent(), Vector3(next.x, floor_y + 0.1, next.z), 1.4 * _bulk)
 		next.y = floor_y
 		if _vy < 0.0:
 			_vy = 0.0
@@ -291,6 +331,16 @@ func _physics_process(delta: float) -> void:
 		if _gulp_wait <= 0.0:
 			_gulp_wait = 0.9
 			_play(_gulps[randi() % _gulps.size()], randf_range(0.78, 0.94), -6.0)
+	var want_bulk := DIPLO_BIG if _diplodocus else 1.0
+	if _diplodocus:
+		_bulk = lerpf(_bulk, want_bulk, 1.0 - exp(-4.5 * delta))
+	else:
+		_bulk = 1.0
+	if _diplo_root:
+		_diplo_root.scale = Vector3.ONE * _bulk
+	if _diplodocus and _mouth:
+		_mouth.position = Vector3(0.0, 1.45, -6.35) * _bulk
+		_mouth_shape.radius = 1.45 * _bulk
 	_seat_cameras()
 	_animate()
 	_bite_overlapped_titans()
@@ -388,6 +438,8 @@ func chirp(index: int) -> void:
 func _roar_now() -> void:
 	_roar = 2.15
 	var deep := lerpf(1.0, 0.78, clampf((_grown - 1.0) / 1.1, 0.0, 1.0))
+	if _diplodocus:
+		deep *= 0.62
 	_play(_roar_call, randf_range(0.96, 1.05) * deep, 3.0)
 
 
@@ -407,23 +459,33 @@ func _toggle_camera() -> void:
 func _show_camera() -> void:
 	_chase.current = owns_screen and not fps_mode
 	_fps.current = owns_screen and fps_mode
-	_hood.visible = fps_mode
+	if _hood:
+		_hood.visible = fps_mode and not _diplodocus
+	if _diplo_hood:
+		_diplo_hood.visible = fps_mode and _diplodocus
 
 
 func _seat_cameras() -> void:
 	var bob := 0.0
 	if Vector2(velocity.x, velocity.z).length() > 1.2 and _grounded:
-		bob = sin(_time * 7.2) * 0.045 * _grown
-	_chase.position = Vector3(0.0, 4.8, 11.0) * _grown + Vector3(0.0, bob, 0.0)
+		bob = sin(_time * 7.2) * 0.045 * _grown * _bulk
+	if _diplodocus:
+		_chase.position = Vector3(0.0, 6.4, 15.5) * _grown * _bulk + Vector3(0.0, bob, 0.0)
+	else:
+		_chase.position = Vector3(0.0, 4.8, 11.0) * _grown + Vector3(0.0, bob, 0.0)
 	if _head:
-		_head.position = Vector3(0.0, 2.45, -1.7) * _grown
+		_head.position = (Vector3(0.0, 1.9, -5.45) * _bulk if _diplodocus else Vector3(0.0, 2.45, -1.7)) * _grown
 	if _hood:
 		_hood.scale = Vector3(0.7, 0.28, 1.15) * _grown
+	if _diplo_hood:
+		_diplo_hood.scale = Vector3(0.5, 0.2, 1.35) * _grown * _bulk
 	var lifted := Land.above_ground(_chase.global_position, 1.5)
 	if lifted.y > _chase.global_position.y:
 		_chase.global_position = lifted
 	var ahead := -global_transform.basis.z
-	var focus := global_position + Vector3(0.0, 2.3 * _grown, 0.0) + ahead * 3.2 * _grown
+	var focus_y := 3.1 * _bulk if _diplodocus else 2.3
+	var look_ahead := 3.2 * _bulk if _diplodocus else 3.2
+	var focus := global_position + Vector3(0.0, focus_y * _grown, 0.0) + ahead * look_ahead * _grown
 	focus.y += sin(pitch) * 7.0
 	if _chase.global_position.distance_to(focus) > 0.4:
 		_chase.look_at(focus, Vector3.UP)
@@ -435,25 +497,28 @@ func _seat_cameras() -> void:
 func _animate() -> void:
 	var speed := Vector2(velocity.x, velocity.z).length()
 	var moving := speed > 0.8 and _grounded
-	var pace := 7.2 if moving else 1.6
-	var swing := 0.55 if moving else 0.06
+	var pace := (5.2 if _diplodocus else 7.2) if moving else 1.6
+	var swing := (0.32 if _diplodocus else 0.55) if moving else 0.06
 	var phase := _time * pace
 	if moving and not Land.in_river(global_position.x, global_position.z):
 		var mark := floorf(phase / PI)
 		if mark != _step_mark:
 			_step_mark = mark
 			var side := 1.0 if sin(phase) > 0.0 else -1.0
-			var at := global_position + global_transform.basis.x * side * 0.55 * _grown
+			var at := global_position + global_transform.basis.x * side * 0.82 * _grown * _bulk
 			at.y = Land.ground_y(at.x, at.z) + 0.08
-			Dust.puff(get_parent(), at, 0.7)
+			Dust.puff(get_parent(), at, 0.7 * _bulk)
 	for i in _legs.size():
-		var step := sin(phase + float(i) * PI)
+		var offset := float(i) * PI
+		if _diplodocus:
+			offset = [0.0, PI, PI, 0.0][i % 4]
+		var step := sin(phase + offset)
 		_legs[i].rotation.x = step * swing
 		if i < _leg_home.size():
 			_legs[i].position.y = _leg_home[i] + maxf(step, 0.0) * (0.18 if moving else 0.0)
 	if _avatar:
-		var breath := sin(_time * 1.7) * 0.025
-		var hop := absf(sin(phase)) * (0.07 if moving else 0.0)
+		var breath := sin(_time * 1.7) * 0.025 * _bulk
+		var hop := absf(sin(phase)) * (0.07 if moving else 0.0) * _bulk
 		_dip = lerpf(_dip, 0.0, 0.12)
 		_avatar.position.y = breath + hop - _dip
 		_avatar.rotation.y = -_lag * 0.85
@@ -465,7 +530,13 @@ func _animate() -> void:
 		_tail.rotation.x = sin(_time * (6.0 if moving else 1.4)) * (0.05 if moving else 0.02)
 	if _jaw:
 		var open := 0.42 if _roar > 0.0 else (0.28 if drinking else 0.06)
+		if _diplodocus:
+			open *= 0.55
 		_jaw.rotation.x = lerpf(_jaw.rotation.x, -open, 0.2)
+	if _diplodocus and _diplo_neck:
+		var sway := 0.1 if moving else 0.05
+		_diplo_neck.rotation.y = sin(_time * 0.7) * sway
+		_diplo_neck.rotation.x = sin(_time * 0.45) * 0.04
 	if drinking and _head and _roar <= 0.0:
 		_head.rotation.x = lerpf(_head.rotation.x, 0.62, 0.18)
 	_blink_eyes()
@@ -551,6 +622,8 @@ func _build_cameras() -> void:
 	_head.add_child(_fps)
 	_hood = _hood_mesh(Color(0.3, 0.42, 0.16), Vector3(0.7, 0.28, 1.15), Vector3(0.0, -0.22, -0.85))
 	_fps.add_child(_hood)
+	_diplo_hood = _hood_mesh(Color(0.46, 0.48, 0.4), Vector3(0.5, 0.2, 1.35), Vector3(0.0, -0.16, -0.95))
+	_fps.add_child(_diplo_hood)
 
 
 func _hood_mesh(color: Color, scl: Vector3, pos: Vector3) -> MeshInstance3D:
@@ -567,31 +640,80 @@ func _hood_mesh(color: Color, scl: Vector3, pos: Vector3) -> MeshInstance3D:
 	return n
 
 
+func _switch_dino() -> void:
+	if _switch_lock > 0.0:
+		return
+	_switch_lock = 0.35
+	_diplodocus = not _diplodocus
+	_apply_dino()
+	form_changed.emit(form_name())
+
+
+func _apply_dino() -> void:
+	if _rex_root:
+		_rex_root.visible = not _diplodocus
+	if _diplo_root:
+		_diplo_root.visible = _diplodocus
+	if _diplodocus:
+		_legs = _diplo_legs
+		_leg_home = _diplo_leg_home
+		_eyes = _diplo_eyes
+		_tail = _diplo_tail
+		_jaw = _diplo_jaw
+		_mouth.position = Vector3(0.0, 1.45, -6.35) * _bulk
+		_mouth_shape.radius = 1.45 * _bulk
+	else:
+		_legs = _rex_legs
+		_leg_home = _rex_leg_home
+		_eyes = _rex_eyes
+		_tail = _rex_tail
+		_jaw = _rex_jaw
+		_mouth.position = Vector3(0.0, 0.95, -2.85)
+		_mouth_shape.radius = 1.45
+	if not _diplodocus:
+		_bulk = 1.0
+		if _diplo_root:
+			_diplo_root.scale = Vector3.ONE
+	_refresh_speed()
+	_show_camera()
+
+
+func _refresh_speed() -> void:
+	if _diplodocus:
+		run_speed = 26.0 + (_grown - 1.0) * 5.0
+		accel = 16.0
+	else:
+		run_speed = 16.0 + (_grown - 1.0) * 4.0
+		accel = 28.0
+
+
 func _build_body() -> void:
+	_rex_root = Node3D.new()
+	_avatar.add_child(_rex_root)
 	var skin := _mat(Color(0.36, 0.48, 0.2), 0.55)
 	var dark := _mat(Color(0.2, 0.3, 0.12), 0.62)
 	var belly := _mat(Color(0.66, 0.6, 0.38), 0.5)
 	var tooth := _mat(Color(0.95, 0.93, 0.86), 0.28, true)
-	_body(_avatar, 0.78, Vector3(0.95, 0.82, 1.65), Vector3(0.0, 1.9, 0.2), skin)
-	_body(_avatar, 0.55, Vector3(0.72, 0.42, 1.25), Vector3(0.0, 1.5, 0.25), belly)
-	_place(_avatar, _box(Vector3(0.18, 0.16, 1.5)), Vector3(0.0, 2.45, 0.15), Vector3.ZERO, Vector3.ONE, dark)
+	_body(_rex_root, 0.78, Vector3(0.95, 0.82, 1.65), Vector3(0.0, 1.9, 0.2), skin)
+	_body(_rex_root, 0.55, Vector3(0.72, 0.42, 1.25), Vector3(0.0, 1.5, 0.25), belly)
+	_place(_rex_root, _box(Vector3(0.18, 0.16, 1.5)), Vector3(0.0, 2.45, 0.15), Vector3.ZERO, Vector3.ONE, dark)
 	for i in 6:
 		var scute := CylinderMesh.new()
 		scute.top_radius = 0.0
 		scute.bottom_radius = 0.09
 		scute.height = 0.24
 		scute.radial_segments = 5
-		_place(_avatar, scute, Vector3(0.0, 2.58, -0.5 + float(i) * 0.36), Vector3.ZERO, Vector3.ONE, dark)
-	_body(_avatar, 0.42, Vector3(0.8, 0.85, 1.05), Vector3(0.0, 2.15, -1.05), skin)
-	_body(_avatar, 0.52, Vector3(0.82, 0.7, 1.35), Vector3(0.0, 2.5, -2.15), skin)
-	_body(_avatar, 0.28, Vector3(0.7, 0.55, 1.35), Vector3(0.0, 2.28, -3.05), skin)
-	_eye(_avatar, Vector3(0.28, 2.72, -2.55))
-	_eye(_avatar, Vector3(-0.28, 2.72, -2.55))
+		_place(_rex_root, scute, Vector3(0.0, 2.58, -0.5 + float(i) * 0.36), Vector3.ZERO, Vector3.ONE, dark)
+	_body(_rex_root, 0.42, Vector3(0.8, 0.85, 1.05), Vector3(0.0, 2.15, -1.05), skin)
+	_body(_rex_root, 0.52, Vector3(0.82, 0.7, 1.35), Vector3(0.0, 2.5, -2.15), skin)
+	_body(_rex_root, 0.28, Vector3(0.7, 0.55, 1.35), Vector3(0.0, 2.28, -3.05), skin)
+	_eye(_rex_root, Vector3(0.28, 2.72, -2.55))
+	_eye(_rex_root, Vector3(-0.28, 2.72, -2.55))
 	for i in 4:
-		_place(_avatar, _box(Vector3(0.06, 0.14, 0.06)), Vector3(-0.12 + float(i) * 0.08, 2.08, -3.45), Vector3.ZERO, Vector3.ONE, tooth)
+		_place(_rex_root, _box(Vector3(0.06, 0.14, 0.06)), Vector3(-0.12 + float(i) * 0.08, 2.08, -3.45), Vector3.ZERO, Vector3.ONE, tooth)
 	_jaw = Node3D.new()
 	_jaw.position = Vector3(0.0, 2.12, -2.35)
-	_avatar.add_child(_jaw)
+	_rex_root.add_child(_jaw)
 	_body(_jaw, 0.22, Vector3(0.85, 0.45, 1.7), Vector3(0.0, -0.08, -0.85), belly)
 	for i in 4:
 		_place(_jaw, _box(Vector3(0.05, 0.12, 0.05)), Vector3(-0.12 + float(i) * 0.08, 0.02, -1.15), Vector3.ZERO, Vector3.ONE, tooth)
@@ -601,22 +723,27 @@ func _build_body() -> void:
 	_add_leg(-0.48, skin, dark)
 	_tail = Node3D.new()
 	_tail.position = Vector3(0.0, 1.85, 1.35)
-	_avatar.add_child(_tail)
+	_rex_root.add_child(_tail)
 	_body(_tail, 0.42, Vector3(0.7, 0.6, 1.5), Vector3(0.0, 0.05, 0.7), skin)
 	_body(_tail, 0.28, Vector3(0.55, 0.45, 1.35), Vector3(0.0, 0.18, 1.7), dark)
 	_body(_tail, 0.16, Vector3(0.45, 0.35, 1.2), Vector3(0.0, 0.28, 2.45), dark)
+	_rex_legs = _legs.duplicate()
+	_rex_leg_home = _leg_home.duplicate()
+	_rex_eyes = _eyes.duplicate()
+	_rex_tail = _tail
+	_rex_jaw = _jaw
 
 
 func _arm(side: float) -> void:
 	var skin := _mat(Color(0.32, 0.42, 0.18), 0.55)
-	_place(_avatar, _box(Vector3(0.1, 0.28, 0.1)), Vector3(side, 1.85, -0.85), Vector3(0.4, 0.0, side * 0.3), Vector3.ONE, skin)
-	_place(_avatar, _box(Vector3(0.08, 0.16, 0.08)), Vector3(side * 1.05, 1.62, -1.05), Vector3.ZERO, Vector3.ONE, skin)
+	_place(_rex_root, _box(Vector3(0.1, 0.28, 0.1)), Vector3(side, 1.85, -0.85), Vector3(0.4, 0.0, side * 0.3), Vector3.ONE, skin)
+	_place(_rex_root, _box(Vector3(0.08, 0.16, 0.08)), Vector3(side * 1.05, 1.62, -1.05), Vector3.ZERO, Vector3.ONE, skin)
 
 
 func _add_leg(side: float, skin: Material, dark: Material) -> void:
 	var hip := Node3D.new()
 	hip.position = Vector3(side, 1.45, 0.2)
-	_avatar.add_child(hip)
+	_rex_root.add_child(hip)
 	_legs.append(hip)
 	_leg_home.append(hip.position.y)
 	_place(hip, _box(Vector3(0.32, 0.72, 0.36)), Vector3(0.0, -0.32, 0.0), Vector3.ZERO, Vector3.ONE, skin)
@@ -624,9 +751,74 @@ func _add_leg(side: float, skin: Material, dark: Material) -> void:
 	_place(hip, _box(Vector3(0.36, 0.12, 0.7)), Vector3(0.0, -1.28, -0.16), Vector3.ZERO, Vector3.ONE, dark)
 
 
+func _build_diplo() -> void:
+	_diplo_root = Node3D.new()
+	_diplo_root.visible = false
+	_avatar.add_child(_diplo_root)
+	var skin := _mat(Color(0.5, 0.52, 0.4), 0.5)
+	var dark := _mat(Color(0.3, 0.33, 0.26), 0.58)
+	var belly := _mat(Color(0.8, 0.74, 0.56), 0.46)
+	_body(_diplo_root, 1.05, Vector3(1.2, 0.95, 2.35), Vector3(0.0, 2.35, 0.2), skin)
+	_body(_diplo_root, 0.7, Vector3(0.95, 0.4, 1.85), Vector3(0.0, 1.75, 0.2), belly)
+	_body(_diplo_root, 0.32, Vector3(1.15, 0.65, 1.1), Vector3(0.0, 3.15, 0.45), dark)
+	_diplo_neck = Node3D.new()
+	_diplo_neck.position = Vector3(0.0, 2.55, -1.05)
+	_diplo_root.add_child(_diplo_neck)
+	var curve: Array[Vector3] = [
+		Vector3(0.0, 0.15, -0.25),
+		Vector3(0.0, 0.55, -0.9),
+		Vector3(0.0, 0.95, -1.6),
+		Vector3(0.0, 1.1, -2.3),
+		Vector3(0.0, 0.7, -3.05),
+		Vector3(0.0, 0.1, -3.75),
+		Vector3(0.0, -0.55, -4.4),
+	]
+	for i in curve.size():
+		var fat := 0.42 - float(i) * 0.035
+		_body(_diplo_neck, fat, Vector3(1.0, 1.05, 1.2), curve[i], skin if i % 2 == 0 else dark)
+	var head := Vector3(0.0, -0.72, -4.95)
+	_body(_diplo_neck, 0.28, Vector3(0.8, 0.7, 1.45), head, skin)
+	_body(_diplo_neck, 0.14, Vector3(0.65, 0.5, 1.35), head + Vector3(0.0, -0.02, -0.5), belly)
+	_add_eye(_diplo_neck, head + Vector3(0.14, 0.1, -0.28), _diplo_eyes)
+	_add_eye(_diplo_neck, head + Vector3(-0.14, 0.1, -0.28), _diplo_eyes)
+	_body(_diplo_neck, 0.055, Vector3.ONE, head + Vector3(0.07, 0.06, -0.95), dark)
+	_body(_diplo_neck, 0.055, Vector3.ONE, head + Vector3(-0.07, 0.06, -0.95), dark)
+	_diplo_jaw = Node3D.new()
+	_diplo_jaw.position = head + Vector3(0.0, -0.1, -0.2)
+	_diplo_neck.add_child(_diplo_jaw)
+	_body(_diplo_jaw, 0.11, Vector3(0.7, 0.4, 1.55), Vector3(0.0, -0.04, -0.42), belly)
+	_add_diplo_leg(0.82, -0.45, skin, dark)
+	_add_diplo_leg(-0.82, -0.45, skin, dark)
+	_add_diplo_leg(0.74, 1.15, skin, dark)
+	_add_diplo_leg(-0.74, 1.15, skin, dark)
+	_diplo_tail = Node3D.new()
+	_diplo_tail.position = Vector3(0.0, 2.2, 1.85)
+	_diplo_root.add_child(_diplo_tail)
+	_body(_diplo_tail, 0.5, Vector3(0.75, 0.65, 1.7), Vector3(0.0, 0.02, 0.8), skin)
+	_body(_diplo_tail, 0.32, Vector3(0.6, 0.5, 1.8), Vector3(0.0, 0.1, 2.25), dark)
+	_body(_diplo_tail, 0.18, Vector3(0.5, 0.4, 1.9), Vector3(0.0, 0.18, 3.7), skin)
+	_body(_diplo_tail, 0.09, Vector3(0.4, 0.32, 1.7), Vector3(0.0, 0.26, 5.05), dark)
+	_body(_diplo_tail, 0.045, Vector3(0.35, 0.28, 1.5), Vector3(0.0, 0.32, 6.15), skin)
+
+
+func _add_diplo_leg(x: float, z: float, skin: Material, dark: Material) -> void:
+	var hip := Node3D.new()
+	hip.position = Vector3(x, 1.7, z)
+	_diplo_root.add_child(hip)
+	_diplo_legs.append(hip)
+	_diplo_leg_home.append(hip.position.y)
+	_place(hip, _box(Vector3(0.4, 0.9, 0.42)), Vector3(0.0, -0.42, 0.0), Vector3.ZERO, Vector3.ONE, skin)
+	_place(hip, _box(Vector3(0.34, 0.75, 0.36)), Vector3(0.0, -1.1, 0.04), Vector3.ZERO, Vector3.ONE, dark)
+	_place(hip, _box(Vector3(0.48, 0.16, 0.78)), Vector3(0.0, -1.5, -0.06), Vector3.ZERO, Vector3.ONE, dark)
+
+
 func _eye(parent: Node3D, pos: Vector3) -> void:
-	_eyes.append(_body(parent, 0.09, Vector3.ONE, pos, _mat(Color(0.95, 0.95, 0.9), 0.2, true)))
-	_eyes.append(_body(parent, 0.045, Vector3.ONE, pos + Vector3(0.0, 0.0, -0.06), _mat(Color(0.08, 0.06, 0.04), 0.35, true)))
+	_add_eye(parent, pos, _eyes)
+
+
+func _add_eye(parent: Node3D, pos: Vector3, into: Array[MeshInstance3D]) -> void:
+	into.append(_body(parent, 0.09, Vector3.ONE, pos, _mat(Color(0.95, 0.95, 0.9), 0.2, true)))
+	into.append(_body(parent, 0.045, Vector3.ONE, pos + Vector3(0.0, 0.0, -0.06), _mat(Color(0.08, 0.06, 0.04), 0.35, true)))
 
 
 func _body(parent: Node3D, radius: float, scl: Vector3, pos: Vector3, mat: Material) -> MeshInstance3D:

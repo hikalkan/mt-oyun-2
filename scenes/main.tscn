@@ -79,5 +79,5 @@ theme_override_colors/font_outline_color = Color(0.02, 0.1, 0.22, 0.9)
 theme_override_constants/outline_size = 6
 theme_override_font_sizes/font_size = 18
 text = "W A S D veya oklar: yüz    Fare: bak    Boşluk: yukarı    Ctrl: aşağı
-M: değiş    P: kamera    Q: su fışkırt    K: ses    Esc: fareyi bırak
+M: Megalodon    P: kamera    Q: su fışkırt    K: ses    Esc: fareyi bırak
 Balık yemezsen ölürsün. Kötü hayvanlar ısırır. Olta tutarsa ölürsün: derine dal."

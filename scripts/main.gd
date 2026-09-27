@@ -10,9 +10,9 @@ const TitanScript := preload("res://scripts/titan.gd")
 const Land := preload("res://scripts/land_bounds.gd")
 const LandDecorScript := preload("res://scripts/land_decor.gd")
 const LEVELS := {
-	"kolay": {"goal": 8, "hunger": 48.0, "bite": 18.0, "fish": 150, "sharks": 2, "dogs": 2, "mean": 3, "fishers": 2, "hook": -16.0, "reach": 12.0, "title": "Kolay"},
-	"orta": {"goal": 15, "hunger": 30.0, "bite": 12.0, "fish": 110, "sharks": 3, "dogs": 3, "mean": 4, "fishers": 3, "hook": -22.0, "reach": 16.0, "title": "Orta"},
-	"zor": {"goal": 25, "hunger": 16.0, "bite": 7.0, "fish": 72, "sharks": 4, "dogs": 4, "mean": 6, "fishers": 5, "hook": -32.0, "reach": 18.0, "title": "Zor"},
+	"kolay": {"goal": 8, "hunger": 48.0, "bite": 18.0, "fish": 450, "sharks": 2, "dogs": 2, "mean": 3, "fishers": 2, "hook": -16.0, "reach": 12.0, "title": "Kolay"},
+	"orta": {"goal": 15, "hunger": 30.0, "bite": 12.0, "fish": 330, "sharks": 3, "dogs": 3, "mean": 4, "fishers": 3, "hook": -22.0, "reach": 16.0, "title": "Orta"},
+	"zor": {"goal": 25, "hunger": 16.0, "bite": 7.0, "fish": 216, "sharks": 4, "dogs": 4, "mean": 6, "fishers": 5, "hook": -32.0, "reach": 18.0, "title": "Zor"},
 }
 const LAND_LEVELS := {
 	"kolay": {"goal": 24, "hunger": 64.0, "bite": 14.0, "prey": 40, "titans": 1, "title": "Kolay"},
@@ -61,6 +61,7 @@ func _ready() -> void:
 	_build_menu()
 	get_viewport().size_changed.connect(_layout_hud)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	add_child(preload("res://scripts/song.gd").new())
 	get_tree().paused = true
 
 
@@ -145,8 +146,6 @@ func _on_ate(at: Vector3, seat: Seat) -> void:
 	seat.score_label.scale = Vector2(1.12, 1.12)
 	seat.score_tween = create_tween()
 	seat.score_tween.tween_property(seat.score_label, "scale", Vector2.ONE, 0.16)
-	if _total_score() >= _goal:
-		_win()
 
 
 func _on_ate_titan(at: Vector3, seat: Seat) -> void:
@@ -169,8 +168,6 @@ func _on_ate_titan(at: Vector3, seat: Seat) -> void:
 	seat.score_label.scale = Vector2(1.2, 1.2)
 	seat.score_tween = create_tween()
 	seat.score_tween.tween_property(seat.score_label, "scale", Vector2.ONE, 0.2)
-	if _total_score() >= _goal:
-		_win()
 
 
 func _on_form(_form_label: String, seat: Seat) -> void:
@@ -479,8 +476,8 @@ func _spawn_titans(count: int) -> void:
 
 func _land_hint(pad: bool) -> String:
 	if pad:
-		return "Kumanda    Sol çubuk: koş    Sağ çubuk: bak\nA: zıpla    Y: kamera    LB: kükre    X: yumurta\nX ile yumurta koy, en fazla 10. Bebek çatlayıp çıkar, yiyince büyür.\n6 hayvan yiyince dev dinozoru sen yersin."
-	return "W A S D veya oklar: koş    Fare: bak    Boşluk: zıpla\nP: kamera    K: kükre    B: yumurta    Esc: fareyi bırak\nB ile yumurta koy, en fazla 10. Bebek çatlayıp çıkar, yiyince büyür.\n6 hayvan yiyince dev dinozoru sen yersin."
+		return "Kumanda    Sol çubuk: koş    Sağ çubuk: bak\nA: zıpla    Y: kamera    LB: kükre    X: yumurta    RB: Diplodocus\nX ile yumurta koy, en fazla 10. Bebek çatlayıp çıkar, yiyince büyür.\n6 hayvan yiyince dev dinozoru sen yersin."
+	return "W A S D veya oklar: koş    Fare: bak    Boşluk: zıpla\nP: kamera    K: kükre    B: yumurta    M: Diplodocus    Esc: fareyi bırak\nB ile yumurta koy, en fazla 10. Bebek çatlayıp çıkar, yiyince büyür.\n6 hayvan yiyince dev dinozoru sen yersin."
 
 
 func _bind_seat(seat: Seat) -> void:
@@ -530,7 +527,7 @@ func _spawn_second() -> void:
 	var score_label := _hud_label("Yediğin balık: 0", 28)
 	var form_label := _hud_label("Köpekbalığı", 24)
 	var camera_label := _hud_label("Arkadan", 22)
-	var hint := _hud_label("Kumanda    Sol çubuk: yüz    Sağ çubuk: bak\nA: yukarı    B: aşağı    X: değiş    Y: kamera\nRB: su fışkırt    LB: ses    Olta tutarsa ölürsün, derine dal", 18)
+	var hint := _hud_label("Kumanda    Sol çubuk: yüz    Sağ çubuk: bak\nA: yukarı    B: aşağı    X: Megalodon    Y: kamera\nRB: su fışkırt    LB: ses    Olta tutarsa ölürsün, derine dal", 18)
 	$HUD/Root.add_child(score_label)
 	$HUD/Root.add_child(form_label)
 	$HUD/Root.add_child(camera_label)
@@ -594,9 +591,9 @@ func _spawn_fish() -> void:
 			pos = around + Vector3(cos(ang), randf_range(-8.0, 3.0), sin(ang)) * randf_range(8.0, 20.0)
 			pos = Bounds.clamp_pos(pos, 2.0)
 		elif i < mid_count:
-			pos = Bounds.nearby_water(around, 14.0, 48.0)
+			pos = Bounds.nearby_water(around, 14.0, 80.0)
 		else:
-			pos = Bounds.nearby_water(around, 36.0, 95.0)
+			pos = Bounds.random_water(around)
 		fish.position = pos
 		add_child(fish)
 
@@ -606,6 +603,7 @@ func _spawn_enemies() -> void:
 	_spawn_enemy_kind(int(level.sharks), EnemyScript.Kind.SHARK)
 	_spawn_enemy_kind(int(level.dogs), EnemyScript.Kind.DOG)
 	_spawn_enemy_kind(int(level.mean), EnemyScript.Kind.FISH)
+	_spawn_giant_shark()
 
 
 func _spawn_enemy_kind(count: int, kind: EnemyScript.Kind) -> void:
@@ -615,6 +613,17 @@ func _spawn_enemy_kind(count: int, kind: EnemyScript.Kind) -> void:
 		enemy.setup(kind)
 		enemy.position = Bounds.nearby_water(around, 36.0, 95.0)
 		add_child(enemy)
+
+
+func _spawn_giant_shark() -> void:
+	var shark = EnemyScript.new()
+	shark.setup(EnemyScript.Kind.SHARK)
+	shark.make_giant()
+	var around: Vector3 = _seats[0].who.global_position
+	var ang := randf() * TAU
+	var dist := randf_range(120.0, 190.0)
+	shark.position = Bounds.clamp_pos(around + Vector3(cos(ang) * dist, -14.0, sin(ang) * dist), 8.0)
+	add_child(shark)
 
 
 func _on_hurt(_left: float, seat: Seat) -> void:
@@ -732,7 +741,7 @@ func _refresh_score(seat: Seat) -> void:
 
 func _refresh_goal() -> void:
 	if _goal_label:
-		_goal_label.text = "Hedef: %d / %d" % [_total_score(), _goal]
+		_goal_label.visible = false
 
 
 func _sync_views() -> void:
@@ -803,6 +812,7 @@ func _build_goal_label() -> void:
 	$HUD/Root.add_child(_goal_label)
 	_goal_label.offset_top = 10.0
 	_goal_label.offset_bottom = 48.0
+	_goal_label.visible = false
 
 
 func _build_hunger_bar(seat: Seat) -> void:
@@ -920,6 +930,8 @@ func _style_form(seat: Seat) -> void:
 	seat.form_label.text = seat.who.form_name()
 	if _mode_key == "kara":
 		seat.form_label.add_theme_color_override("font_color", Color(0.78, 0.92, 0.55))
+	elif seat.who.has_method("is_megalodon") and seat.who.is_megalodon():
+		seat.form_label.add_theme_color_override("font_color", Color(0.75, 0.78, 0.82))
 	elif seat.who.is_shark():
 		seat.form_label.add_theme_color_override("font_color", Color(0.9, 0.93, 0.96))
 	else:
@@ -1048,10 +1060,10 @@ func _refresh_menu() -> void:
 	if info:
 		if _mode_key == "kara":
 			var land: Dictionary = LAND_LEVELS[_diff_key]
-			info.text = "%d hayvan ye. Tokluk %d saniye sürer.\nYedikçe büyürsün. 6 hayvan yiyince dev dinozoru da yiyebilirsin." % [int(land.goal), int(land.hunger)]
+			info.text = "İstediğin kadar ye. Tokluk %d saniye sürer.\nYedikçe büyürsün. M ile Diplodocus olursun. 6 hayvan yiyince dev dinozoru da yiyebilirsin." % int(land.hunger)
 		else:
 			var level: Dictionary = LEVELS[_diff_key]
-			info.text = "%d balık ye. Tokluk %d saniye sürer.\nKöpekbalığı, köpek ve kötü balık saldırır. Olta tutarsa ölürsün." % [int(level.goal), int(level.hunger)]
+			info.text = "İstediğin kadar balık ye. Tokluk %d saniye sürer.\nM ile Megalodon olursun, çok büyürsün. Kocaman bir köpek balığı da var." % int(level.hunger)
 
 
 func _style_choice(button: Button, on: bool) -> void:
@@ -1140,8 +1152,8 @@ func _build_water() -> void:
 	var plane := PlaneMesh.new()
 	var span := Bounds.visual_span()
 	plane.size = Vector2(span, span)
-	plane.subdivide_width = 80
-	plane.subdivide_depth = 80
+	plane.subdivide_width = 140
+	plane.subdivide_depth = 140
 	water.name = "Water"
 	water.mesh = plane
 	water.position = Vector3(0, Bounds.SURFACE_Y, 0)
@@ -1162,8 +1174,8 @@ func _build_sand() -> void:
 	var plane := PlaneMesh.new()
 	var span := Bounds.visual_span()
 	plane.size = Vector2(span, span)
-	plane.subdivide_width = 72
-	plane.subdivide_depth = 72
+	plane.subdivide_width = 120
+	plane.subdivide_depth = 120
 	bed.name = "Sand"
 	bed.mesh = plane
 	_sand = bed

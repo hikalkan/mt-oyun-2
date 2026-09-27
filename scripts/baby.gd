@@ -116,8 +116,13 @@ func _physics_process(delta: float) -> void:
 		size = parent.body_size()
 	var col := slot % 5
 	var row := int(slot / 5)
-	var goal: Vector3 = parent.global_position + back * (3.6 + float(row) * 2.3) * size + side * (float(col) - 2.0) * 1.7 * size
-	var speed := 14.0 * size
+	var back_dist := (3.6 + float(row) * 2.3) * size
+	var side_dist := (float(col) - 2.0) * 1.7 * size
+	if parent.has_method("follow_back"):
+		back_dist = parent.follow_back(row)
+		side_dist = (float(col) - 2.0) * parent.follow_side()
+	var goal: Vector3 = parent.global_position + back * back_dist + side * side_dist
+	var speed := 14.0 * minf(size, 2.4)
 	if _biting > 0.0:
 		goal = _bite_at
 		speed = 17.0 + _size * 6.0
@@ -125,7 +130,9 @@ func _physics_process(delta: float) -> void:
 	var flat := Vector3(goal.x - pos.x, 0.0, goal.z - pos.z)
 	var dist := flat.length()
 	if dist > 8.0 and _biting <= 0.0:
-		speed = 18.0 * size
+		speed = 18.0 * minf(size, 2.4)
+		if dist > 20.0:
+			speed = minf(speed + dist * 0.85, 80.0)
 	if dist > 0.15:
 		var step := flat.limit_length(speed * delta)
 		pos.x += step.x

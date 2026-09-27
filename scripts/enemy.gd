@@ -12,6 +12,10 @@ var _bite_wait := 0.8
 var _flee := 0.0
 var _vel := Vector3.ZERO
 var _tail: Node3D
+var giant := false
+var _voice: AudioStreamPlayer3D
+var _call_wait := 3.0
+const _snarl: AudioStream = preload("res://assets/audio/shark.ogg")
 
 
 func setup(next_kind: Kind) -> void:
@@ -31,6 +35,13 @@ func setup(next_kind: Kind) -> void:
 			bite_range = 1.55
 
 
+func make_giant() -> void:
+	giant = true
+	speed = 11.5
+	bite_damage = 36.0
+	bite_range = 15.0
+
+
 func _ready() -> void:
 	add_to_group("enemy")
 	collision_layer = 1
@@ -38,7 +49,7 @@ func _ready() -> void:
 	monitoring = false
 	monitorable = true
 	var shape := SphereShape3D.new()
-	shape.radius = 1.2 if kind == Kind.SHARK else 0.8
+	shape.radius = 1.35 if giant else (1.2 if kind == Kind.SHARK else 0.8)
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	add_child(col)
@@ -48,6 +59,14 @@ func _ready() -> void:
 		_build_dog()
 	else:
 		_build_fish()
+	if giant:
+		scale = Vector3(10.0, 10.0, 10.0)
+		_voice = AudioStreamPlayer3D.new()
+		_voice.stream = _snarl
+		_voice.unit_size = 28.0
+		_voice.max_distance = 180.0
+		_voice.volume_db = 6.0
+		add_child(_voice)
 
 
 func _physics_process(delta: float) -> void:
@@ -55,6 +74,8 @@ func _physics_process(delta: float) -> void:
 		_bite_wait -= delta
 	if _flee > 0.0:
 		_flee -= delta
+	if _call_wait > 0.0:
+		_call_wait -= delta
 	var hunter = _nearest_player()
 	var desired := Vector3.ZERO
 	if hunter != null:
@@ -63,17 +84,22 @@ func _physics_process(delta: float) -> void:
 		if _flee > 0.0:
 			offset = -offset
 		if offset.length_squared() > 0.04:
-			var rush := speed + (1.5 if _flee <= 0.0 and dist < 14.0 else 0.0)
+			var rush := speed + (1.5 if _flee <= 0.0 and dist < (48.0 if giant else 14.0) else 0.0)
 			desired = offset.normalized() * rush
 		if _flee <= 0.0 and dist < bite_range and _bite_wait <= 0.0:
 			if hunter.hurt(bite_damage, global_position):
 				_bite_wait = 1.25
-	_vel = _vel.move_toward(desired, 5.5 * delta)
+		if giant and dist < 55.0 and _call_wait <= 0.0 and _voice:
+			_voice.pitch_scale = randf_range(0.48, 0.58)
+			_voice.play()
+			_call_wait = randf_range(7.0, 11.0)
+	_vel = _vel.move_toward(desired, (3.4 if giant else 5.5) * delta)
 	global_position += _vel * delta
-	global_position = Bounds.clamp_pos(global_position, 2.4)
+	global_position = Bounds.clamp_pos(global_position, 20.0 if giant else 2.4)
 	_face()
 	if _tail:
-		_tail.rotation.y = sin(Time.get_ticks_msec() * 0.011) * 0.45
+		var wag := 0.005 if giant else 0.011
+		_tail.rotation.y = sin(Time.get_ticks_msec() * wag) * 0.45
 
 
 func bonk(from_pos: Vector3) -> bool:
@@ -113,9 +139,9 @@ func _face() -> void:
 
 
 func _build_shark() -> void:
-	var gray := _mat(Color(0.22, 0.24, 0.28))
-	var dark := _mat(Color(0.1, 0.11, 0.13))
-	var belly := _mat(Color(0.82, 0.8, 0.78))
+	var gray := _mat(Color(0.1, 0.11, 0.14) if giant else Color(0.22, 0.24, 0.28))
+	var dark := _mat(Color(0.05, 0.05, 0.07) if giant else Color(0.1, 0.11, 0.13))
+	var belly := _mat(Color(0.72, 0.7, 0.66) if giant else Color(0.82, 0.8, 0.78))
 	_body(self, 0.55, Vector3(0.9, 0.72, 2.05), Vector3(0, 0, 0.1), gray)
 	_body(self, 0.34, Vector3(0.75, 0.42, 1.3), Vector3(0, -0.16, 0.15), belly)
 	var nose := CylinderMesh.new()
@@ -134,6 +160,10 @@ func _build_shark() -> void:
 	_place(_tail, _box(Vector3(0.08, 0.34, 0.22)), Vector3(0, -0.1, 0.26), Vector3(-0.2, 0, 0), Vector3.ONE, gray)
 	_eye(Vector3(0.24, 0.08, -0.62), Color(0.9, 0.08, 0.06))
 	_eye(Vector3(-0.24, 0.08, -0.62), Color(0.9, 0.08, 0.06))
+	if giant:
+		var tooth := _mat(Color(0.95, 0.93, 0.86))
+		for i in 6:
+			_place(self, _box(Vector3(0.045, 0.2, 0.04)), Vector3(-0.16 + float(i) * 0.064, -0.28, -1.42), Vector3.ZERO, Vector3.ONE, tooth)
 
 
 func _build_dog() -> void:

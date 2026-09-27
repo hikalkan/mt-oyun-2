@@ -57,9 +57,9 @@ func _process(delta: float) -> void:
 
 
 func _forest(rng: RandomNumberGenerator) -> void:
-	for i in 40:
-		var x := rng.randf_range(-100.0, -18.0)
-		var z := rng.randf_range(-90.0, 90.0)
+	for i in 110:
+		var x := rng.randf_range(-Bounds.HALF * 0.72, -Bounds.HALF * 0.08)
+		var z := rng.randf_range(-Bounds.HALF * 0.55, Bounds.HALF * 0.55)
 		var h := rng.randf_range(10.0, 26.0)
 		_kelps.append(_kelp(Vector3(x, Bounds.floor_y(x, z), z), h, rng.randf_range(0.28, 0.5)))
 
@@ -71,20 +71,20 @@ func _reef(rng: RandomNumberGenerator) -> void:
 		Color(0.72, 0.32, 0.78),
 		Color(0.95, 0.75, 0.28),
 	]
-	for i in 22:
-		var x := rng.randf_range(18.0, 100.0)
-		var z := rng.randf_range(-90.0, 90.0)
+	for i in 60:
+		var x := rng.randf_range(Bounds.HALF * 0.08, Bounds.HALF * 0.72)
+		var z := rng.randf_range(-Bounds.HALF * 0.55, Bounds.HALF * 0.55)
 		var at := Vector3(x, Bounds.floor_y(x, z) + 0.3, z)
 		_coral(at, colors[i % colors.size()], rng)
 
 
 func _rocks(rng: RandomNumberGenerator) -> void:
 	var mat := _mat(Color(0.38, 0.4, 0.44), 0.9)
-	for i in 26:
+	for i in 80:
 		var rock := MeshInstance3D.new()
 		var mesh := SphereMesh.new()
-		var x := rng.randf_range(-200.0, 200.0)
-		var z := rng.randf_range(-200.0, 200.0)
+		var x := rng.randf_range(-Bounds.HALF * 0.9, Bounds.HALF * 0.9)
+		var z := rng.randf_range(-Bounds.HALF * 0.9, Bounds.HALF * 0.9)
 		var deep := clampf((-Bounds.floor_y(x, z) - 70.0) / 100.0, 0.0, 1.0)
 		mesh.radius = rng.randf_range(0.8, 1.6) + deep * 2.2
 		mesh.height = mesh.radius * 2.0
@@ -140,9 +140,9 @@ func _coral(at: Vector3, color: Color, rng: RandomNumberGenerator) -> void:
 
 func _schools_build(rng: RandomNumberGenerator) -> void:
 	var mat := _mat(Color(0.55, 0.78, 0.88), 0.4)
-	for n in 6:
+	for n in 14:
 		var node := Node3D.new()
-		var pos := Vector3(-80.0 + float(n) * 32.0, -6.0 - float(n) * 2.5, -40.0 + float(n) * 18.0)
+		var pos := Vector3(rng.randf_range(-Bounds.HALF * 0.7, Bounds.HALF * 0.7), rng.randf_range(-18.0, -4.0), rng.randf_range(-Bounds.HALF * 0.7, Bounds.HALF * 0.7))
 		node.position = pos
 		add_child(node)
 		for i in 7:
@@ -214,7 +214,7 @@ func _boats_build(rng: RandomNumberGenerator) -> void:
 func _launch(node: Node3D, rng: RandomNumberGenerator, speed: float, scl: float) -> void:
 	var boat := Boat.new()
 	boat.node = node
-	boat.pos = Vector3(rng.randf_range(-150.0, 150.0), 0.0, rng.randf_range(-150.0, 150.0))
+	boat.pos = Vector3(rng.randf_range(-Bounds.HALF * 0.6, Bounds.HALF * 0.6), 0.0, rng.randf_range(-Bounds.HALF * 0.6, Bounds.HALF * 0.6))
 	boat.heading = rng.randf_range(-PI, PI)
 	boat.speed = speed
 	boat.bob = rng.randf() * TAU
